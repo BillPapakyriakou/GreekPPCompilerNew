@@ -332,7 +332,7 @@ class Parser:
     def syntax_analyzer(self):
         self.token = self.get_token()
         self.program()
-        print("Compilation succesfully completed")
+        print("Compilation successfully completed")
 
 
     # Gets the next token from the lexical analyzer
@@ -967,56 +967,95 @@ class Parser:
 
         global token
 
+        t1_place = ""
+        t2_place = ""
+        e_place = ""
+
         self.optional_sign()
 
-        self.term()
+        t1_place = self.term()  # Calls term and stores the first term
 
         # Handle addition & subtraction (+, -)
         while (token.recognised_string == "+" or token.recognised_string == "-"):
 
+            op = token.recognised_string  # Stores operator + or -
+
             # Dont move on to the next token, add_oper() will handle that
             self.add_oper()
-            self.term()
+            t2_place = self.term()  # Calls term and stores the second term
+
+            w = self.intermediate_gen.newTemp()  # Creates new temporary variable for current result
+            self.intermediate_gen.genQuad(op, t1_place, t2_place, w)  # Creates quad that adds current result to the new t2
+            t1_place = w  # Current result is stored in t1 for it to be used in case we have another t2
+
+        e_place = t1_place  # If there isnt another t2 then the result will be t1
+        return e_place
+
 
 
     def term(self):
 
         global token
 
-        self.factor()
+        f1_place = ""
+        f2_place = ""
+        t_place = ""
+
+        f1_place = self.factor()  # Calls factor and stores the first term
 
         # Handle multiplication and division (*, /)
         while (token.recognised_string == "*" or token.recognised_string == "/"):
 
+            op = token.recognised_string  # Stores operator * or /
+
             # Dont move on to the next token, mul_oper() will handle that
             self.mul_oper()
-            self.factor()
+            f2_place = self.factor()  # Calls factor and stores the second term
+
+            w = self.intermediate_gen.newTemp()  # Creates new temporary variable for current result
+            self.intermediate_gen.genQuad(op, f1_place, f2_place, w)  # Creates quad that adds current result to the new f2
+            f1_place = w  # Current result is stored in f1 for it to be used in case we have another f2
+
+        t_place = f1_place  # If there isnt another f2 then the result will be f1
+        return t_place
 
 
     def factor(self):
 
         global token
 
+        e_place = ""   # To store expression
+        f_place = ""   # To store factor value
+        id_place = ""  # To store id value
+
         if (token.family == "number"):
+            f_place = token.recognised_string  # Store number
             token = self.get_token()
 
         elif (token.recognised_string == "("):
             token = self.get_token()
 
-            self.expression()
+            e_place = self.expression()  # Call expresion() and store the expression
 
             if (token.recognised_string == ")"):
                 token = self.get_token()
             else:
                 self.error("Expected ')' after expression")
 
+            f_place = e_place  # Transfer e_place to f_place
+
         elif (token.family == "id"):
+            id_place = token.recognised_string  # Store id
             token = self.get_token()
 
             self.idtail()
 
+            f_place = id_place  # Transfer id_place to f_place
+
         else:
             self.error("Expected factor: INTEGER, '(' expression ')', or ID.")
+
+        return f_place  # Return the final factor value (number, expression, or id)
 
 
     def relational_oper(self):
