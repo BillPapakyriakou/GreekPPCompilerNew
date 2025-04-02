@@ -82,8 +82,8 @@ class InterCodeGen:
             for j in range(1, 5):
                 quads += " " + str(quad[j])  # Add operator, operand1, operand2, operand3
             quads += "\n"                    # Add new line between quads
-            output_file.write(quads)         # Add quad to output file
 
+        output_file.write(quads)  # Add quad to output file
         output_file.close()
 
 
@@ -319,9 +319,13 @@ class Lex:
 class Parser:
 
     # Constructor
-    def __init__(self, lexical_analyzer):
+    def __init__(self, lexical_analyzer, intermediate_gen):
         self.lexical_analyzer = lexical_analyzer
+        self.intermediate_gen = intermediate_gen
         self.token = None
+
+        self.program_name = ""      # For intermediate code generation
+        self.subprogram_name = ""     # For intermediate code generation
 
 
     # Start syntax analysis by getting the first token & calling the parsing functions
@@ -356,6 +360,8 @@ class Parser:
         if token.family != "id":
             self.error("Program name (id) expected after 'πρόγραμμα'.")
 
+        self.program_name = token.recognised_string  # Store program name
+
         token = self.get_token()  # move on to the next token
 
         self.program_block()  # Calls program_block() to continue with the analysis
@@ -369,6 +375,8 @@ class Parser:
         self.declarations()
         self.subprograms()
 
+        self.intermediate_gen.genQuad("begin_block", self.program_name, "_", "_")  # Begin block to mark beginning of program
+
         # Check for 'αρχή_προγράμματος"
         if token.recognised_string != "αρχή_προγράμματος":
             self.error("Expected 'αρχή_προγράμματος' before program statements.")
@@ -381,6 +389,8 @@ class Parser:
         if token.recognised_string != "τέλος_προγράμματος":
             self.error("Expected 'τέλος_προγράμματος' at the end of the program.")
 
+        self.intermediate_gen.genQuad("halt", "_", "_", "_")  # Halt to stop execution after program statements
+        self.intermediate_gen.genQuad("end_block", self.program_name, "_", "_")  # End block to mark end of program
 
     def declarations(self):
 
@@ -435,6 +445,7 @@ class Parser:
 
         # Get function name (id)
         if (token.family == "id"):
+            self.subprogram_name = token.recognised_string  # Store function name
             token = self.get_token()
         else:
             self.error("Expected function identifier after 'συνάρτηση'.")
@@ -453,7 +464,11 @@ class Parser:
         else:
             self.error("Expected ')' after function parameter list.")
 
+        self.intermediate_gen.genQuad("begin_block", self.subprogram_name, "_", "_")  # Begin block to mark beginning of function
+
         self.funcblock()
+
+        self.intermediate_gen.genQuad("end_block", self.subprogram_name, "_", "_")  # End block to mark end of function
 
 
     def proc(self):
@@ -467,6 +482,7 @@ class Parser:
 
         # Get procedure name (id)
         if (token.family == "id"):
+            self.subprogram_name = token.recognised_string  # Store procedure name
             token = self.get_token()
         else:
             self.error("Expected procedure identifier after 'διαδικασία'.")
@@ -485,7 +501,11 @@ class Parser:
         else:
             self.error("Expected ')' after procedure parameter list.")
 
+        self.intermediate_gen.genQuad("begin_block", self.subprogram_name, "_", "_")  # Begin block to mark beginning of procedure
+
         self.procblock()
+
+        self.intermediate_gen.genQuad("end_block", self.subprogram_name, "_", "_")  # End block to mark end of procedure
 
 
     def formalparlist(self):
@@ -945,7 +965,7 @@ class Parser:
 
     def expression(self):
 
-        global token;
+        global token
 
         self.optional_sign()
 
@@ -1052,14 +1072,17 @@ class Parser:
 
 def main():
 
-    lexer = Lex(sys.argv[1])  # Initialize the Lexical Analyzer
-    parser = Parser(lexer)  # Initialize the Syntax Analyzer
+    intermediateGen = InterCodeGen([], [])  # Lists will be populated during compilation
+
+    lexer = Lex(sys.argv[1])                 # Initialize the Lexical Analyzer
+    parser = Parser(lexer, intermediateGen)  # Initialize the Syntax Analyzer
 
     #token = lexer.next_Token()  # Get the first token
 
     # Start the syntax analysis
     parser.syntax_analyzer()
 
+    intermediateGen.interCodeGen(sys.argv[1])  # Test intermediate code, creates .int file
     """
     while token.family != "EOF":
         print(token)
