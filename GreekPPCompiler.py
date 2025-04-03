@@ -906,33 +906,89 @@ class Parser:
 
         global token
 
-        # Handle first boolean term
-        self.boolterm()
+        # Initialize true & false lists for boolean term (b)
+        b_true = self.intermediate_gen.emptyList()
+        b_false = self.intermediate_gen.emptyList()
+
+        # Initialize temporary lists for individual bool terms (q1, q2, ..., qn)
+        q1_true = self.intermediate_gen.emptyList()
+        q1_false = self.intermediate_gen.emptyList()
+        q2_true = self.intermediate_gen.emptyList()
+        q2_false = self.intermediate_gen.emptyList()
+
+        # Handle first boolean term - store first bool term results in q1
+        q1_true, q1_false = self.boolterm()
+
+        # Quad transfer from q1 list to b list
+        b_true = q1_true
+        b_false = q1_false
 
         # Repeat for multiple OR (ή) operators
         while (token.recognised_string == "ή"):
+            # Backpatch previous false list to point to the next instruction
+            self.intermediate_gen.backpatch(b_false, self.intermediate_gen.nextQuad())
             token = self.get_token()   # Move past 'ή'
 
-            self.boolterm()   # Handle the next boolean term
+            # Handle the next boolean term - store new bool term results in q2
+            q2_true, q2_false = self.boolterm()
+
+            b_true = self.intermediate_gen.mergeList(b_true, q2_true)  # Merge true lists
+            b_false = q2_false  # False list takes the value of q2 false list
+
+        return b_true, b_false  # Return true, false lists
 
 
     def boolterm(self):
 
         global token
 
-        self.boolfactor()
+        # Initialize true & false lists for boolean term (q)
+        q_true = self.intermediate_gen.emptyList()
+        q_false = self.intermediate_gen.emptyList()
+
+        # Initialize temporary lists for individual bool terms (r1, r2, ..., rn)
+        r1_true = self.intermediate_gen.emptyList()
+        r1_false = self.intermediate_gen.emptyList()
+        r2_true = self.intermediate_gen.emptyList()
+        r2_false = self.intermediate_gen.emptyList()
+
+        # Handle first boolean term - store first bool term results in r1
+        r1_true, r1_false = self.boolfactor()
+
+        # Quad transfer from q1 list to b list
+        q_true = r1_true
+        q_false = r1_false
 
         # Repeat for multiple AND (και) operators
         while (token.recognised_string == "και"):
-            token = self.get_token()
+            # Backpatch previous true list to point to the next instruction
+            self.intermediate_gen.backpatch(q_false, self.intermediate_gen.nextQuad())
+            token = self.get_token()  # Move past 'και'
 
-            self.boolfactor()
+            # Handle the next boolean term - store new bool term results in r2
+            r2_true, r2_false = self.boolfactor()
+
+            q_false = self.intermediate_gen.mergeList(q_false, r2_false)  # Merge false lists
+            q_true = r2_true  # True list takes the value of r2 true list
+
+        return q_true, q_false  # Return true, false lists
 
 
     def boolfactor(self):
 
         global token
 
+        r_true = self.intermediate_gen.emptyList()
+        r_false = self.intermediate_gen.emptyList()
+
+        b_true = self.intermediate_gen.emptyList()
+        b_false = self.intermediate_gen.emptyList()
+
+        e1_place = ""
+        e2_place = ""
+        relop = ""
+
+        # Handle NOT [condition]
         if (token.recognised_string == "όχι"):
             token = self.get_token()
 
@@ -940,28 +996,50 @@ class Parser:
                 token = self.get_token()
             else:
                 self.error("Expected '[' after όχι")
-            self.condition()
+
+            b_true, b_false = self.condition()  # Call condition() and get b_true, b_false from it
 
             if (token.recognised_string == "]"):
                 token = self.get_token()
             else:
                 self.error("Expected ']' after condition")
 
+            # Swap and transfer quads from b list to r list
+            r_true = b_false
+            r_false = b_true
 
+        # Handle [condition]
         elif (token.recognised_string == "["):
             token = self.get_token()
-            self.condition()
+
+            b_true, b_false = self.condition()  # Call condition() and get b_true, b_false from it
 
             if (token.recognised_string == "]"):
                 token = self.get_token()
             else:
                 self.error("Expected ']' after condition")
 
-        else:
-            self.expression()
-            self.relational_oper()
-            self.expression()
+            # Transfer quads from b list to r list
+            r_true = b_true
+            r_false = b_false
 
+        # Handle relational expression (e1_place relop e2_place)
+        else:
+            e1_place = self.expression()  # Get 1st expression
+            relop = self.relational_oper()  # Get relational operation
+            e2_place = self.expression()  # Get 2nd expression
+
+            # Create first quad for the relational operator
+            nq = self.intermediate_gen.nextQuad()
+            r_true = self.intermediate_gen.makeList(nq)  # Create list for true conditions
+            self.intermediate_gen.genQuad(relop, e1_place, e2_place, "_")  # Create relational operator quad
+
+            # Create second squad for the jump
+            nq = self.intermediate_gen.nextQuad()
+            r_false = self.intermediate_gen.makeList(nq)  # Create list for false conditions
+            self.intermediate_gen.genQuad("jump", "_", "_", "_")  # Create quad jump
+
+        return r_true, r_false
 
     def expression(self):
 
@@ -1061,22 +1139,29 @@ class Parser:
     def relational_oper(self):
 
         global token
+        relop = ""
 
         if token.recognised_string == "=":
+            relop = token.recognised_string
             token = self.get_token()  # Move past '='
         elif token.recognised_string == "<=":
+            relop = token.recognised_string
             token = self.get_token()  # Move past '<='
         elif token.recognised_string == ">=":
+            relop = token.recognised_string
             token = self.get_token()  # Move past '>='
         elif token.recognised_string == "<>":
+            relop = token.recognised_string
             token = self.get_token()  # Move past '<>'
         elif token.recognised_string == "<":
+            relop = token.recognised_string
             token = self.get_token()  # Move past '<'
         elif token.recognised_string == ">":
+            relop = token.recognised_string
             token = self.get_token()  # Move past '>'
         else:
             self.error("Expected a relational operator.")
-
+        return relop  # For intermediate code generation (boolfactor)
 
     def add_oper(self):
 
