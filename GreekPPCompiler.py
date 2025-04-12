@@ -437,6 +437,7 @@ class Parser:
     def func(self):
 
         global token
+        global function_names
 
         if (token.recognised_string == "συνάρτηση"):
             token = self.get_token()
@@ -446,6 +447,7 @@ class Parser:
         # Get function name (id)
         if (token.family == "id"):
             self.subprogram_name = token.recognised_string  # Store function name
+            function_names.append(token.recognised_string)
             token = self.get_token()
         else:
             self.error("Expected function identifier after 'συνάρτηση'.")
@@ -474,6 +476,7 @@ class Parser:
     def proc(self):
 
         global token
+        global procedure_names
 
         if (token.recognised_string == "διαδικασία"):
             token = self.get_token()
@@ -483,6 +486,7 @@ class Parser:
         # Get procedure name (id)
         if (token.family == "id"):
             self.subprogram_name = token.recognised_string  # Store procedure name
+            procedure_names.append(token.recognised_string)
             token = self.get_token()
         else:
             self.error("Expected procedure identifier after 'διαδικασία'.")
@@ -620,10 +624,11 @@ class Parser:
 
         # Check if we have an assignment (ID followed by ":=")
         if (token.family == "id"):  # Read "ID"
+            id = self.token.recognised_string  # Store the identifier for the assignment quad
             token = self.get_token()  # Move to the next token
 
             if (token.recognised_string == ":="):  # If ":=" is read, then its an assignment
-                self.assignment_stat()
+                self.assignment_stat(id)
             else:
                 self.error("Expected ':=' after assignment identifier")
 
@@ -649,13 +654,26 @@ class Parser:
             self.call_stat()
 
 
-    def assignment_stat(self):
+    def assignment_stat(self, id):
 
         global token
+        global function_names
 
-        if (token.recognised_string == ":="):  # We already are at ":=" after assignment_stat()
-            token = self.get_token()    # Move to the next token, should be an expression
-            self.expression()    # Handle the expression
+        e_place = ""
+
+        if (token.recognised_string == ":="):
+            token = self.get_token()    # Move to the next token
+            e_place = self.expression()    # Handle the expression and store the expression
+
+            # Check if the expression is a function (handle case where we have z := function(x, y))
+            if e_place in function_names:
+                w = self.intermediate_gen.newTemp()
+                self.intermediate_gen.genQuad("par", w, "RET", "_")
+                self.intermediate_gen.genQuad("call", e_place, "_", "_")
+                self.intermediate_gen.genQuad(":=", w, "_", id)
+            else:
+                # If not a function, do regular assignment
+                self.intermediate_gen.genQuad(":=", e_place, "_", id)  # Generate assignment quad
         else:
             self.error("Expected ':=' after assignment identifier")
 
@@ -664,11 +682,19 @@ class Parser:
 
         global token
 
+        true_list = self.intermediate_gen.emptyList()  # List of quads with condition thats true
+        false_list = self.intermediate_gen.emptyList()  # List of quads with condition thats false
+
+        if_list = self.intermediate_gen.emptyList()  # List for handling the end of the if-statement
+
         # Expects "εάν"
         if (token.recognised_string == "εάν"):
             token = self.get_token()
 
-            self.condition()  # Handle the condition part
+            true_list, false_list = self.condition()  # Handle the condition part, save results on true / false lists
+
+            # Backpatch true condition to the next quad after the "τότε" block
+            self.intermediate_gen.backpatch(true_list, self.intermediate_gen.nextQuad())
 
             # Expects "τότε" after condition
             if (token.recognised_string == "τότε"):
@@ -677,8 +703,18 @@ class Parser:
                 # Handle the sequence of statements on the "τότε" (then) part
                 self.sequence()
 
+                # Mark the point to jump after the then block
+                if_list = self.intermediate_gen.makeList(self.intermediate_gen.nextQuad())
+                self.intermediate_gen.genQuad("jump", "_", "_", "_")
+
+                # Backpatch false condition to the next point after then
+                self.intermediate_gen.backpatch(false_list, self.intermediate_gen.nextQuad())
+
                 # Call the optional else_part() function
                 self.elsepart()
+
+                # Backpatch the if list (where the then block ends) to jump after the else part
+                self.intermediate_gen.backpatch(if_list, self.intermediate_gen.nextQuad())
 
             else:
                 self.error("Expected 'τότε' after the condition in the if statement.")
@@ -709,7 +745,17 @@ class Parser:
         if (token.recognised_string == "όσο"):
             token = self.get_token()
 
-            self.condition()
+            b_true = self.intermediate_gen.emptyList()
+            b_false = self.intermediate_gen.emptyList()
+
+            # Save the condition
+            b_quad = self.intermediate_gen.nextQuad()
+
+            # Get true and false lists from the condition
+            b_true, b_false = self.condition()
+
+            # Connect true list to the loop body
+            self.intermediate_gen.backpatch(b_true, self.intermediate_gen.nextQuad())
 
             if (token.recognised_string == "επανάλαβε"):
                 token = self.get_token()
@@ -718,6 +764,12 @@ class Parser:
                 self.error("Expected 'επανάλαβε' after condition in while loop.")
 
             self.sequence()
+
+            # Jump to the condition
+            self.intermediate_gen.genQuad("jump", "_", "_", b_quad)
+
+            # Connect false list to the code after the loop
+            self.intermediate_gen.backpatch(b_false, self.intermediate_gen.nextQuad())
 
             if (token.recognised_string == "όσο_τέλος"):
                 token = self.get_token()
@@ -730,8 +782,13 @@ class Parser:
 
         global token
 
+        true_list = self.intermediate_gen.emptyList()
+        false_list = self.intermediate_gen.emptyList()
+
         if (token.recognised_string == "επανάλαβε"):
             token = self.get_token()
+
+            s_quad = self.intermediate_gen.nextQuad()  # Save the start of the loop
 
             self.sequence()
 
@@ -741,7 +798,13 @@ class Parser:
             else:
                 self.error("Expected 'μέχρι' after the loop body.")
 
-            self.condition()
+            true_list, false_list = self.condition()  # Evaluate condition and store its results in true, false lists
+
+            # If the condition is false, repeat the loop
+            self.intermediate_gen.backpatch(false_list, s_quad)
+
+            # If the condition is true, exit the loop
+            self.intermediate_gen.backpatch(true_list, self.intermediate_gen.nextQuad())
 
         else:
             self.error("Expected 'επανάλαβε' at the beginning of the do-while loop.")
@@ -755,6 +818,7 @@ class Parser:
             token = self.get_token()
 
         if (token.family == "id"):
+            loop_id = self.token.recognised_string
             token = self.get_token()
         else:
             self.error("Expected ID after 'για'.")
@@ -802,17 +866,22 @@ class Parser:
 
         global token
 
+        e_place = ""
+
         if (token.recognised_string == "γράψε"):
             token = self.get_token()
         else:
             self.error("Expected 'γράψε' at the beginning of print statement.")
 
-        self.expression()
+        e_place = self.expression()
+        self.intermediate_gen.genQuad("out", e_place, "_", "_")
 
 
     def input_stat(self):
 
         global token
+
+        id_place = ""
 
         if (token.recognised_string == "διάβασε"):
             token = self.get_token()  # Move to the next token
@@ -820,6 +889,8 @@ class Parser:
             self.error("Expected 'γράψε' at the beginning of input statement.")
 
         if (token.family == "id"):  # Read "ID"
+            id_place = token.recognised_string
+            self.intermediate_gen.genQuad("inp", id_place, "_", "_")
             token = self.get_token()  # Move to the next token
         else:
             self.error("Expected an identifier after 'διάβασε'.")
@@ -828,6 +899,7 @@ class Parser:
     def call_stat(self):
 
         global token
+        global call_name
 
         if (token.recognised_string == "εκτέλεσε"):
             token = self.get_token()  # Move to the next token
@@ -835,6 +907,7 @@ class Parser:
             self.error("Expected 'εκτέλεσε' at the beginning of call statement.")
 
         if (token.family == "id"):  # Read "ID"
+            call_name = token.recognised_string  # Store function / procedure name
             token = self.get_token()  # Move to the next token
         else:
             self.error("Expected an identifier after 'εκτέλεσε'.")
@@ -845,9 +918,22 @@ class Parser:
     def idtail(self):
 
         global token
+        global call_name
+        global function_names
+        global procedure_names
 
         if (token.recognised_string == "("):
-            self.actualpars()
+            self.actualpars()   # Handle actual parameters
+
+            # Check if we re dealing with a function, or procedure
+            if (call_name in function_names):  # If its a function
+                w = self.intermediate_gen.newTemp()
+                self.intermediate_gen.genQuad("par", w, "RET", "_")
+                self.intermediate_gen.genQuad("call", call_name, "_", "_")
+            elif (call_name in procedure_names):
+                self.intermediate_gen.genQuad("call", call_name, "_", "_")
+
+
         # Otherwise, do nothing (handles empty case)
 
 
@@ -889,17 +975,21 @@ class Parser:
 
         global token
 
-        if (token.recognised_string == "%"):
+        if (token.recognised_string == "%"):   # Pass by reference (% before variable)
 
             token = self.get_token()   # Move past '%'
 
             if (token.family == "id"):
+                varname = token.recognised_string
+                self.intermediate_gen.genQuad("par", varname, "REF", "_")
+
                 token = self.get_token()
             else:
                 self.error("Expected ID after '%' in actual parameter.")
 
-        else:
-            self.expression()
+        else:   # Pass by value (variable)
+            expression = self.expression()
+            self.intermediate_gen.genQuad("par", expression, "CV", "_")
 
 
     def condition(self):
@@ -1213,7 +1303,6 @@ def main():
         token = lexer.next_Token()  # Get the next token
     """
 
-
 # Define some global variables
 if (__name__ == "__main__"):
 
@@ -1241,6 +1330,10 @@ if (__name__ == "__main__"):
     token = 0
     eof_flag = False
     input_file = open(sys.argv[1], "r", encoding="utf-8", errors="replace")
+    call_name = ""  # Used in call_stat() to store function - procedure name for intermediate code generation
+    function_names = []  # Store function names for intermediate code generation
+    procedure_names = []  # Store procedure names for intermediate code generation
+
 
 
     # Main call
