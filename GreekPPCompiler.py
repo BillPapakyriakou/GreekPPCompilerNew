@@ -816,9 +816,11 @@ class Parser:
 
         if (token.recognised_string == "για"):
             token = self.get_token()
+        else:
+            self.error("Expected 'για' at beginning of for loop.")
 
         if (token.family == "id"):
-            loop_id = self.token.recognised_string
+            loop_var = self.token.recognised_string
             token = self.get_token()
         else:
             self.error("Expected ID after 'για'.")
@@ -828,16 +830,29 @@ class Parser:
         else:
             self.error("Expected ':=' after 'ID.")
 
-        self.expression()
+        start_value = self.expression()
+        self.intermediate_gen.genQuad(":=", start_value, "_", loop_var)  # 🆕 Quad αρχικοποίησης
 
         if (token.recognised_string == "έως"):
             token = self.get_token()
         else:
             self.error("Expected 'έως' after ':='.")
 
-        self.expression()
+        final_val = self.expression()
 
-        self.step()
+        # 🆕 Προαιρετικό 'με_βήμα'
+        step_val = "1"
+        if token.recognised_string == "με_βήμα":
+            token = self.get_token()
+            step_val = self.expression()
+            
+        # 🆕 Quad ελέγχου <=
+        loop_check = self.intermediate_gen.nextQuad()
+        self.intermediate_gen.genQuad("<=", loop_var, final_val, "_")
+        
+        # 🆕 Δημιουργία jump για έξοδο από τη λούπα (αν ψευδής)
+        false_jump = self.intermediate_gen.makeList(self.intermediate_gen.nextQuad())
+        self.intermediate_gen.genQuad("jump", "_", "_", "_")
 
         if (token.recognised_string == "επανάλαβε"):
             token = self.get_token()
@@ -845,7 +860,18 @@ class Parser:
             self.error("Expected 'επανάλαβε' after expressions in for loop.")
 
         self.sequence()
+        
+        # 🆕 Υπολογισμός επόμενης τιμής: i := i + step_val
+        temp = self.intermediate_gen.newTemp()
+        self.intermediate_gen.genQuad("+", loop_var, step_val, temp)
+        self.intermediate_gen.genQuad(":=", temp, "_", loop_var)
 
+        # 🆕 Επιστροφή στον έλεγχο
+        self.intermediate_gen.genQuad("jump", "_", "_", loop_check)
+
+        # 🆕 Backpatch του false jump για έξοδο
+        self.intermediate_gen.backpatch(false_jump, self.intermediate_gen.nextQuad())
+        
         if (token.recognised_string == "για_τέλος"):
             token = self.get_token()
         else:
