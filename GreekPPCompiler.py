@@ -17,6 +17,98 @@ class Token:
         return f"String: {self.recognised_string} | Family: {self.family} | Line: {self.line_number}"
 
 
+# Symbol table helper methods
+
+# Entity class - entity representation in the symbol table (variable, function, procedure entity)
+
+class Entity:
+
+    # Constructor
+    def __init__(self, name, type, startingQuad):
+        self.name = name    # Entity name
+        self.type = type    # Entity type (variable, function, procedure)
+        self.startingQuad = startingQuad    # Starting quad for functions or procedures
+
+        self.argumentList = []  # List of arguments for functions or procedures
+        self.offset = 0     # Offset for memory
+        self.framelength = 0    # Total frame length
+        self.parMode = ""   # Parameter mode (pass by value or pass by reference) if dealing with a parameter type
+
+# Scope class - scope representation in the symbol table (global, function scope)
+
+class Scope:
+
+    # Constructor
+    def __init__(self, nestingLevel):
+        self.nestingLevel = nestingLevel    # Depth level for the scope
+        self.listEntity = []            # List of entities for the scope
+
+
+# Argument class - formal parameter representation of a function (or procedure)
+
+class Argument:
+
+    # Constructor
+    def __init__(self, parMode, type):
+        self.parMode = parMode  # (integer) parameter passing mode, value or reference
+        self.type = type    # Argument type - variable, int, etc.
+
+
+# Symbol table class - handles symbol management, keeps track of the scope and of the entity storage
+
+class SymbolTable:
+
+    def __init__(self):
+        self.globalScope = Scope(0)   # Nesting level (depth level) starts at 0 for initialization
+        self.scopes = [self.globalScope]    # List that holds all the scopes starting with the global scope
+
+
+    def addEntity(self, name, type, startingQuad = None):
+        currentScope = self.scopes[-1]
+
+        for entity in currentScope.listEntity:
+            if entity.name == name:
+                raise Exception(f"Entity {name} already exists in this scope")
+
+        new_entity = Entity(name, type, startingQuad)
+
+        new_entity.offset = currentScope.framelength
+        currentScope.framelength += 4
+        currentScope.listEntity.append(new_entity)
+
+        return new_entity
+
+
+    def addScope(self, scope):
+        newScope = Scope(len(self.scopes))
+        self.scopes.append(newScope)
+        return newScope
+
+    def deleteScope(self):
+        if len(self.scopes) > 0:
+            self.scopes.pop()
+        else:
+            print("Cannot delete the global scope.")
+
+    def addArgument(self, parMode, type):
+        argument = Argument(parMode, type)
+        currentScope = self.scopes[-1]
+        if currentScope.listEntity:
+            currentScope.listEntity[-1].argumentList.append(argument)
+        else:
+            print("No entity to add argument to.")
+
+    def searchEntity(self, name):
+        for scope in reversed(self.scopes):
+            for entity in scope.listEntity:
+                if entity.name == name:
+                    return entity
+        raise Exception(f"Entity {name} not found.")
+
+
+    def SymbolTable(self):
+        return 0
+
 # InterCodeGen class - handles intermediate code generation using quads
 
 class InterCodeGen:
@@ -831,7 +923,7 @@ class Parser:
             self.error("Expected ':=' after 'ID.")
 
         start_value = self.expression()
-        self.intermediate_gen.genQuad(":=", start_value, "_", loop_var)  # 🆕 Quad αρχικοποίησης
+        self.intermediate_gen.genQuad(":=", start_value, "_", loop_var)
 
         if (token.recognised_string == "έως"):
             token = self.get_token()
@@ -840,17 +932,17 @@ class Parser:
 
         final_val = self.expression()
 
-        # 🆕 Προαιρετικό 'με_βήμα'
+
         step_val = "1"
         if token.recognised_string == "με_βήμα":
             token = self.get_token()
             step_val = self.expression()
             
-        # 🆕 Quad ελέγχου <=
+
         loop_check = self.intermediate_gen.nextQuad()
         self.intermediate_gen.genQuad("<=", loop_var, final_val, "_")
         
-        # 🆕 Δημιουργία jump για έξοδο από τη λούπα (αν ψευδής)
+
         false_jump = self.intermediate_gen.makeList(self.intermediate_gen.nextQuad())
         self.intermediate_gen.genQuad("jump", "_", "_", "_")
 
@@ -861,15 +953,15 @@ class Parser:
 
         self.sequence()
         
-        # 🆕 Υπολογισμός επόμενης τιμής: i := i + step_val
+
         temp = self.intermediate_gen.newTemp()
         self.intermediate_gen.genQuad("+", loop_var, step_val, temp)
         self.intermediate_gen.genQuad(":=", temp, "_", loop_var)
 
-        # 🆕 Επιστροφή στον έλεγχο
+
         self.intermediate_gen.genQuad("jump", "_", "_", loop_check)
 
-        # 🆕 Backpatch του false jump για έξοδο
+
         self.intermediate_gen.backpatch(false_jump, self.intermediate_gen.nextQuad())
         
         if (token.recognised_string == "για_τέλος"):
