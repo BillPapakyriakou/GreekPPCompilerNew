@@ -107,7 +107,22 @@ class SymbolTable:
 
 
     def SymbolTable(self):
-        return 0
+        import sys
+        filename = sys.argv[1]
+        out_filename = filename[:-3] + ".c"
+
+        with open(out_filename, "w", encoding="utf-8") as f:
+            f.write("// Πίνακας Συμβόλων\n\n")
+            for i, scope in enumerate(self.scopes):
+                f.write(f"// Scope level {i}\n")
+                for entity in scope.listEntity:
+                    line = f"{entity.name}: {entity.type}, offset: {entity.offset}"
+                    if entity.type in {"function", "procedure"}:
+                        line += f", startingQuad: {entity.startingQuad}"
+                        if entity.argumentList:
+                            args = ', '.join(f"{arg.parMode}-{arg.type}" for arg in entity.argumentList)
+                            line += f", args: [{args}]"
+                    f.write(line + "\\n")
 
 # InterCodeGen class - handles intermediate code generation using quads
 
@@ -411,9 +426,10 @@ class Lex:
 class Parser:
 
     # Constructor
-    def __init__(self, lexical_analyzer, intermediate_gen):
+    def __init__(self, lexical_analyzer, intermediate_gen, symbol_table):
         self.lexical_analyzer = lexical_analyzer
         self.intermediate_gen = intermediate_gen
+        self.symbol_table = symbol_table  # ΝΕΟ
         self.token = None
 
         self.program_name = ""      # For intermediate code generation
@@ -499,6 +515,8 @@ class Parser:
         global token
 
         if token.family == "id":  # Ensure varlist starts with an id
+            var_name = token.recognised_string
+            self.symbol_table.addEntity(var_name, "variable")  # ΝΕΟ
             token = self.get_token()
 
             while token.family == "id":  # If another ID appears without a comma, raise error
@@ -508,6 +526,8 @@ class Parser:
                 token = self.get_token()
 
                 if token.family == "id":
+                    var_name = token.recognised_string
+                    self.symbol_table.addEntity(var_name, "variable")  # ΝΕΟ
                     token = self.get_token()
                 else:
                     self.error("Expected an identifier after ',' in variable list.")
@@ -539,6 +559,8 @@ class Parser:
         # Get function name (id)
         if (token.family == "id"):
             self.subprogram_name = token.recognised_string  # Store function name
+            self.symbol_table.addEntity(self.subprogram_name, "function", self.intermediate_gen.nextQuad())  # ή procedure
+            self.symbol_table.addScope(None)  # Νέο scope
             function_names.append(token.recognised_string)
             token = self.get_token()
         else:
@@ -563,6 +585,7 @@ class Parser:
         self.funcblock()
 
         self.intermediate_gen.genQuad("end_block", self.subprogram_name, "_", "_")  # End block to mark end of function
+        self.symbol_table.deleteScope()  # Επιστροφή στο προηγούμενο scope
 
 
     def proc(self):
@@ -578,6 +601,8 @@ class Parser:
         # Get procedure name (id)
         if (token.family == "id"):
             self.subprogram_name = token.recognised_string  # Store procedure name
+            self.symbol_table.addEntity(self.subprogram_name, "function", self.intermediate_gen.nextQuad())  # ή procedure
+            self.symbol_table.addScope(None)  # Νέο scope
             procedure_names.append(token.recognised_string)
             token = self.get_token()
         else:
@@ -602,19 +627,37 @@ class Parser:
         self.procblock()
 
         self.intermediate_gen.genQuad("end_block", self.subprogram_name, "_", "_")  # End block to mark end of procedure
+        self.symbol_table.deleteScope()  # Επιστροφή στο προηγούμενο scope
 
 
     def formalparlist(self):
 
         global token
+        
+        while token.recognised_string in {"τιμή", "αναφορά"}:
+            par_mode = token.recognised_string  # 'τιμή' ή 'αναφορά'
+            token = self.get_token()
+            
+            if token.family == "id":
+                var_name = token.recognised_string
+                self.symbol_table.addEntity(var_name, "parameter")
+                self.symbol_table.addArgument("CV" if par_mode == "τιμή" else "REF", "variable")
+                token = self.get_token()
+            else:
+                self.error("Expected parameter identifier after 'τιμή' or 'αναφορά'.")
 
-        while (token.family == "id"):
-            self.varlist()
+            while token.recognised_string == ",":
+                token = self.get_token()
 
-        # Check if we read ')' which means that no parameters are left
-        if token.recognised_string == ")":
-            return  # Returning without moving past ) since func() and proc() handle that themselves
-        else:
+                if token.family == "id":
+                    var_name = token.recognised_string
+                    self.symbol_table.addEntity(var_name, "parameter")
+                    self.symbol_table.addArgument("CV" if par_mode == "τιμή" else "REF", "variable")
+                    token = self.get_token()
+                else:
+                    self.error("Expected parameter identifier after ','.")
+    
+        if token.recognised_string != ")":
             self.error("Expected ')' after formal parameter list.")
 
 
@@ -1406,8 +1449,9 @@ def main():
 
     intermediateGen = InterCodeGen([], [])  # Lists will be populated during compilation
 
+    symbolTable = SymbolTable()
     lexer = Lex(sys.argv[1])                 # Initialize the Lexical Analyzer
-    parser = Parser(lexer, intermediateGen)  # Initialize the Syntax Analyzer
+    parser = Parser(lexer, intermediateGen, symbolTable)  # Initialize the Syntax Analyzer
 
     #token = lexer.next_Token()  # Get the first token
 
@@ -1419,7 +1463,10 @@ def main():
     while token.family != "EOF":
         print(token)
         token = lexer.next_Token()  # Get the next token
+        
     """
+    # Εκτύπωση πίνακα συμβόλων σε .c αρχείο
+    symbolTable.SymbolTable()
 
 # Define some global variables
 if (__name__ == "__main__"):
@@ -1443,7 +1490,7 @@ if (__name__ == "__main__"):
                 "αρχή_συνάρτησης", "τέλος_συνάρτησης",
                 "αρχή_διαδικασίας", "τέλος_διαδικασίαs",
                 "αρχή_προγράμματος", "τέλος_προγράμματος",
-                "ή", "και", "εκτέλεσε"}
+                "ή", "και", "εκτέλεσε", "τιμή", "αναφορά"}
 
     token = 0
     eof_flag = False
