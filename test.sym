@@ -1,0 +1,12 @@
+// Symbol Table
+
+// Scope level 0
+a/12
+b/16
+f/20
+
+// Scope level 1
+a/12
+είσοδος_a/16/0 ->CV
+έξοδος_c/20/0 ->REF
+

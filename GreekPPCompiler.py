@@ -42,6 +42,7 @@ class Scope:
     def __init__(self, nestingLevel):
         self.nestingLevel = nestingLevel    # Depth level for the scope
         self.listEntity = []            # List of entities for the scope
+        self.framelength = 12
 
 
 # Argument class - formal parameter representation of a function (or procedure)
@@ -61,13 +62,15 @@ class SymbolTable:
     def __init__(self):
         self.globalScope = Scope(0)   # Nesting level (depth level) starts at 0 for initialization
         self.scopes = [self.globalScope]    # List that holds all the scopes starting with the global scope
+        self.depth = 1
 
 
     def addEntity(self, name, type, startingQuad = None):
         currentScope = self.scopes[-1]
 
         for entity in currentScope.listEntity:
-            if entity.name == name:
+            if entity.name == name and entity.type == type:
+                print(name, type)
                 raise Exception(f"Entity {name} already exists in this scope")
 
         new_entity = Entity(name, type, startingQuad)
@@ -79,14 +82,16 @@ class SymbolTable:
         return new_entity
 
 
-    def addScope(self, scope):
+    def addScope(self):
         newScope = Scope(len(self.scopes))
         self.scopes.append(newScope)
+        self.depth += 1
         return newScope
 
     def deleteScope(self):
         if len(self.scopes) > 0:
             self.scopes.pop()
+            self.depth -= 1
         else:
             print("Cannot delete the global scope.")
 
@@ -106,23 +111,34 @@ class SymbolTable:
         raise Exception(f"Entity {name} not found.")
 
 
-    def SymbolTable(self):
-        import sys
+    def symbolTableGen(self):
         filename = sys.argv[1]
-        out_filename = filename[:-3] + ".c"
+        out_filename = filename[:-3] + ".sym"
 
         with open(out_filename, "w", encoding="utf-8") as f:
-            f.write("// Πίνακας Συμβόλων\n\n")
+            f.write("// Symbol Table\n\n")
+
+            # Iterate over scopes and entities within each scope
             for i, scope in enumerate(self.scopes):
-                f.write(f"// Scope level {i}\n")
+                f.write(f"// Scope level {scope.nestingLevel}\n")
+
                 for entity in scope.listEntity:
-                    line = f"{entity.name}: {entity.type}, offset: {entity.offset}"
-                    if entity.type in {"function", "procedure"}:
-                        line += f", startingQuad: {entity.startingQuad}"
-                        if entity.argumentList:
-                            args = ', '.join(f"{arg.parMode}-{arg.type}" for arg in entity.argumentList)
-                            line += f", args: [{args}]"
-                    f.write(line + "\\n")
+                    # Write basic entity information
+                    line = f"{entity.name}/{entity.offset}"
+
+                    # If the entity is a function or procedure, add argument info
+                    if entity.argumentList:
+                        # Add argument types and passing modes
+                        for arg in entity.argumentList:
+                            line += f"/{arg.type}"
+                        for arg in entity.argumentList:
+                            line += f" ->{arg.parMode}"
+
+                    # Write the line with entity information
+                    f.write(line + "\n")
+
+                f.write("\n")  # Add space between scopes for readability
+
 
 # InterCodeGen class - handles intermediate code generation using quads
 
@@ -130,6 +146,7 @@ class InterCodeGen:
 
     # Constructor
     def __init__(self, quad_list, variables):
+        self.symbolTable = SymbolTable()
         self.quad_list = quad_list  # list of quads (label, op, arg1, arg2, result)
         self.variables = variables  # list to store all program variables
 
@@ -151,9 +168,10 @@ class InterCodeGen:
         temp = "T_" + str(self.tempVarCounter)
         self.tempVarCounter += 1
         self.variables.append(temp)
+        self.symbolTable.addEntity(temp, "temporary", None)  # add temporary variable entity
         return temp
 
-    # Creates an empty list for quad labels (
+    # Creates an empty list for quad labels
     def emptyList(self):
         return []
 
@@ -429,7 +447,7 @@ class Parser:
     def __init__(self, lexical_analyzer, intermediate_gen, symbol_table):
         self.lexical_analyzer = lexical_analyzer
         self.intermediate_gen = intermediate_gen
-        self.symbol_table = symbol_table  # ΝΕΟ
+        self.symbol_table = symbol_table
         self.token = None
 
         self.program_name = ""      # For intermediate code generation
@@ -470,6 +488,8 @@ class Parser:
 
         self.program_name = token.recognised_string  # Store program name
 
+        #self.symbol_table.addScope()
+
         token = self.get_token()  # move on to the next token
 
         self.program_block()  # Calls program_block() to continue with the analysis
@@ -500,6 +520,8 @@ class Parser:
         self.intermediate_gen.genQuad("halt", "_", "_", "_")  # Halt to stop execution after program statements
         self.intermediate_gen.genQuad("end_block", self.program_name, "_", "_")  # End block to mark end of program
 
+        self.symbol_table.deleteScope()
+
     def declarations(self):
 
         global token
@@ -510,29 +532,46 @@ class Parser:
             self.varlist()  # Now, varlist() is responsible for checking IDs
 
 
-    def varlist(self):
-
+    def varlist(self, mode=None):
         global token
 
-        if token.family == "id":  # Ensure varlist starts with an id
-            var_name = token.recognised_string
-            self.symbol_table.addEntity(var_name, "variable")  # ΝΕΟ
+        # Normal parameter or formal parameter handling
+        if token.family == "id":
+            if mode == "CV":  # If mode is CV (by value), treat it as εισοδος
+                self.symbol_table.addEntity(f"είσοδος_{token.recognised_string}", "parameter")  # Add as είσοδος
+                self.symbol_table.addArgument("CV", 0)  # Mark as CV (by value)
+            elif mode == "REF":  # If mode is REF (by reference), treat it as εξοδος
+                self.symbol_table.addEntity(f"έξοδος_{token.recognised_string}", "parameter")  # Add as έξοδος
+                self.symbol_table.addArgument("REF", 0)  # Mark as REF (by reference)
+            else:  # If no mode (regular parameter)
+                self.symbol_table.addEntity(token.recognised_string, "parameter")  # Add as regular parameter
+                #self.symbol_table.addArgument("parameter")  # Mark as regular parameter
+
             token = self.get_token()
 
-            while token.family == "id":  # If another ID appears without a comma, raise error
-                self.error("Expected ',' between variable names.")
+            while token.family == "id":
+                self.error("Expected ',' between variable names.")  # Check for unexpected tokens
 
             while token.recognised_string == ",":  # Handle commas
                 token = self.get_token()
 
                 if token.family == "id":
-                    var_name = token.recognised_string
-                    self.symbol_table.addEntity(var_name, "variable")  # ΝΕΟ
+                    if mode == "CV":  # If mode is CV, treat it as εισοδος
+                        self.symbol_table.addEntity(f"είσοδος_{token.recognised_string}", "parameter")  # Add as είσοδος
+                        self.symbol_table.addArgument("CV")  # Mark as CV (by value)
+                    elif mode == "REF":  # If mode is REF, treat it as εξοδος
+                        self.symbol_table.addEntity(f"έξοδος_{token.recognised_string}", "parameter")  # Add as έξοδος
+                        self.symbol_table.addArgument("REF")  # Mark as REF (by reference)
+                    else:  # If no mode (regular parameter)
+                        self.symbol_table.addEntity(token.recognised_string, "parameter")  # Add as regular parameter
+                        #self.symbol_table.addArgument("parameter")  # Mark as regular parameter
+
                     token = self.get_token()
                 else:
-                    self.error("Expected an identifier after ',' in variable list.")
+                    self.error("Expected an identifier after ',' in variable list.")  # Handle error
         else:
-            self.error("Expected an identifier at the beginning of variable list.")
+            self.error(
+                "Expected an identifier at the beginning of variable list.")  # Handle error for missing identifier
 
 
     def subprograms(self):
@@ -559,9 +598,12 @@ class Parser:
         # Get function name (id)
         if (token.family == "id"):
             self.subprogram_name = token.recognised_string  # Store function name
-            self.symbol_table.addEntity(self.subprogram_name, "function", self.intermediate_gen.nextQuad())  # ή procedure
-            self.symbol_table.addScope(None)  # Νέο scope
             function_names.append(token.recognised_string)
+
+
+            self.symbol_table.addEntity(token.recognised_string, "function", self.intermediate_gen.nextQuad())  # add function entity
+            self.symbol_table.addScope()
+
             token = self.get_token()
         else:
             self.error("Expected function identifier after 'συνάρτηση'.")
@@ -585,8 +627,10 @@ class Parser:
         self.funcblock()
 
         self.intermediate_gen.genQuad("end_block", self.subprogram_name, "_", "_")  # End block to mark end of function
-        self.symbol_table.deleteScope()  # Επιστροφή στο προηγούμενο scope
 
+        self.symbol_table.symbolTableGen()  # Test symbol table, creates .symb file
+
+        self.symbol_table.deleteScope()
 
     def proc(self):
 
@@ -601,9 +645,11 @@ class Parser:
         # Get procedure name (id)
         if (token.family == "id"):
             self.subprogram_name = token.recognised_string  # Store procedure name
-            self.symbol_table.addEntity(self.subprogram_name, "function", self.intermediate_gen.nextQuad())  # ή procedure
-            self.symbol_table.addScope(None)  # Νέο scope
             procedure_names.append(token.recognised_string)
+
+            self.symbol_table.addEntity(token.recognised_string, "procedure", self.intermediate_gen.nextQuad())
+            self.symbol_table.addScope()
+
             token = self.get_token()
         else:
             self.error("Expected procedure identifier after 'διαδικασία'.")
@@ -627,37 +673,21 @@ class Parser:
         self.procblock()
 
         self.intermediate_gen.genQuad("end_block", self.subprogram_name, "_", "_")  # End block to mark end of procedure
-        self.symbol_table.deleteScope()  # Επιστροφή στο προηγούμενο scope
 
+        self.symbol_table.symbolTableGen()  # Test symbol table, creates .symb file
+        self.symbol_table.deleteScope()
 
     def formalparlist(self):
 
         global token
-        
-        while token.recognised_string in {"τιμή", "αναφορά"}:
-            par_mode = token.recognised_string  # 'τιμή' ή 'αναφορά'
-            token = self.get_token()
-            
-            if token.family == "id":
-                var_name = token.recognised_string
-                self.symbol_table.addEntity(var_name, "parameter")
-                self.symbol_table.addArgument("CV" if par_mode == "τιμή" else "REF", "variable")
-                token = self.get_token()
-            else:
-                self.error("Expected parameter identifier after 'τιμή' or 'αναφορά'.")
 
-            while token.recognised_string == ",":
-                token = self.get_token()
+        while (token.family == "id"):
+            self.varlist()
 
-                if token.family == "id":
-                    var_name = token.recognised_string
-                    self.symbol_table.addEntity(var_name, "parameter")
-                    self.symbol_table.addArgument("CV" if par_mode == "τιμή" else "REF", "variable")
-                    token = self.get_token()
-                else:
-                    self.error("Expected parameter identifier after ','.")
-    
-        if token.recognised_string != ")":
+        # Check if we read ')' which means that no parameters are left
+        if token.recognised_string == ")":
+            return  # Returning without moving past ) since func() and proc() handle that themselves
+        else:
             self.error("Expected ')' after formal parameter list.")
 
 
@@ -726,7 +756,7 @@ class Parser:
         # If we find "είσοδος" then call varlist, else: do nothing (no error() call happens)
         if (token.recognised_string == "είσοδος"):
             token = self.get_token()
-            self.varlist()
+            self.varlist(mode = "CV")
 
 
 
@@ -737,7 +767,7 @@ class Parser:
         # If we find "εξοδος" then call varlist, else: do nothing (no error() call happens)
         if (token.recognised_string == "έξοδος"):
             token = self.get_token()
-            self.varlist()
+            self.varlist(mode = "REF")
 
 
     def sequence(self):
@@ -1459,14 +1489,13 @@ def main():
     parser.syntax_analyzer()
 
     intermediateGen.interCodeGen(sys.argv[1])  # Test intermediate code, creates .int file
+
+    #symbolTable.writeSymTable(sys.argv[1])  # Test symbol table, creates .sym file
     """
     while token.family != "EOF":
         print(token)
         token = lexer.next_Token()  # Get the next token
-        
     """
-    # Εκτύπωση πίνακα συμβόλων σε .c αρχείο
-    symbolTable.SymbolTable()
 
 # Define some global variables
 if (__name__ == "__main__"):
@@ -1490,7 +1519,7 @@ if (__name__ == "__main__"):
                 "αρχή_συνάρτησης", "τέλος_συνάρτησης",
                 "αρχή_διαδικασίας", "τέλος_διαδικασίαs",
                 "αρχή_προγράμματος", "τέλος_προγράμματος",
-                "ή", "και", "εκτέλεσε", "τιμή", "αναφορά"}
+                "ή", "και", "εκτέλεσε"}
 
     token = 0
     eof_flag = False

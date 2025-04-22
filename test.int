@@ -1,0 +1,12 @@
+1 : begin_block f _ _
+2 : + a 1 T_0
+3 : := T_0 _ c
+4 : end_block f _ _
+5 : begin_block τεστ _ _
+6 : := 1 _ a
+7 : par a CV _
+8 : par T_1 RET _
+9 : call f _ _
+10 : := T_1 _ c
+11 : halt _ _ _
+12 : end_block τεστ _ _
