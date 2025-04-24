@@ -111,6 +111,7 @@ class SymbolTable:
         raise Exception(f"Entity {name} not found.")
 
 
+
     def symbolTableGen(self):
         filename = sys.argv[1]
         out_filename = filename[:-3] + ".sym"
@@ -129,10 +130,13 @@ class SymbolTable:
                     # If the entity is a function or procedure, add argument info
                     if entity.argumentList:
                         # Add argument types and passing modes
-                        for arg in entity.argumentList:
-                            line += f"/{arg.type}"
+                        #for arg in entity.argumentList:
+                        #    line += f"/{arg.type}"
                         for arg in entity.argumentList:
                             line += f" ->{arg.parMode}"
+
+                    if entity.type == "temporary":
+                        line += " (temp)"
 
                     # Write the line with entity information
                     f.write(line + "\n")
@@ -292,7 +296,8 @@ class Lex:
                 exit(1)
 
             # Check if number falls in range [-32767, 32767]
-            if (int(num) <= - 32767 or int(num) >= 32767) :
+            #if (int(num) <= - 32767 or int(num) >= 32767) :
+            if (int(num) <= - 932767 or int(num) >= 932767):
                 print(f"Number '{num}' is out of range at line {self.current_line}")
                 exit(1)
 
@@ -861,6 +866,7 @@ class Parser:
             # Backpatch true condition to the next quad after the "τότε" block
             self.intermediate_gen.backpatch(true_list, self.intermediate_gen.nextQuad())
 
+
             # Expects "τότε" after condition
             if (token.recognised_string == "τότε"):
                 token = self.get_token()
@@ -1081,7 +1087,7 @@ class Parser:
 
         if (token.family == "id"):  # Read "ID"
             id_place = token.recognised_string
-            self.intermediate_gen.genQuad("inp", id_place, "_", "_")
+            self.intermediate_gen.genQuad("in", id_place, "_", "_")
             token = self.get_token()  # Move to the next token
         else:
             self.error("Expected an identifier after 'διάβασε'.")
@@ -1243,7 +1249,7 @@ class Parser:
         # Repeat for multiple AND (και) operators
         while (token.recognised_string == "και"):
             # Backpatch previous true list to point to the next instruction
-            self.intermediate_gen.backpatch(q_false, self.intermediate_gen.nextQuad())
+            self.intermediate_gen.backpatch(q_true, self.intermediate_gen.nextQuad())
             token = self.get_token()  # Move past 'και'
 
             # Handle the next boolean term - store new bool term results in r2
@@ -1326,6 +1332,8 @@ class Parser:
 
         global token
 
+        sign = self.optional_sign()
+
         t1_place = ""
         t2_place = ""
         e_place = ""
@@ -1333,6 +1341,11 @@ class Parser:
         self.optional_sign()
 
         t1_place = self.term()  # Calls term and stores the first term
+
+        if sign == "-":
+            w = self.intermediate_gen.newTemp()
+            self.intermediate_gen.genQuad("-", "0", t1_place, w)
+            t1_place = w
 
         # Handle addition & subtraction (+, -)
         while (token.recognised_string == "+" or token.recognised_string == "-"):
@@ -1468,9 +1481,13 @@ class Parser:
 
         global token
 
-        if token.recognised_string == "+" or token.recognised_string == "-":
+        if token.recognised_string == "+":
             self.add_oper()
-
+            return None
+        elif token.recognised_string == "-":
+            self.add_oper()
+            return "-"
+        return None
 
 
 # Main function
