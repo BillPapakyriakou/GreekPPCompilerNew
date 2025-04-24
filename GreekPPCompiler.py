@@ -26,7 +26,7 @@ class Entity:
     # Constructor
     def __init__(self, name, type, startingQuad):
         self.name = name    # Entity name
-        self.type = type    # Entity type (variable, function, procedure)
+        self.type = type    # Entity type
         self.startingQuad = startingQuad    # Starting quad for functions or procedures
 
         self.argumentList = []  # List of arguments for functions or procedures
@@ -186,7 +186,6 @@ class SymbolTable:
 
         out += "========================================\n"
 
-        # Append this full snapshot to the global symbol table
         symbolTable += out
 
     def writeSymTable(symbol_table, filename):
