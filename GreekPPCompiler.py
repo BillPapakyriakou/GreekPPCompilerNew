@@ -574,7 +574,7 @@ class Parser:
                 self.symbol_table.addArgument("REF", 0)  # Mark as REF (by reference)
             else:  # If no mode (regular parameter)
                 self.symbol_table.addEntity(token.recognised_string, "parameter")  # Add as regular parameter
-                self.symbol_table.addArgument("parameter", 0)  # Mark as regular parameter
+                #self.symbol_table.addArgument("parameter", 0)  # Mark as regular parameter
 
             token = self.get_token()
 
@@ -595,7 +595,7 @@ class Parser:
                         self.symbol_table.addArgument("REF", 0)  # Mark as REF (by reference)
                     else:  # If no mode (regular parameter)
                         self.symbol_table.addEntity(token.recognised_string, "parameter")  # Add as regular parameter
-                        self.symbol_table.addArgument("parameter", 0)  # Mark as regular parameter
+                        #self.symbol_table.addArgument("parameter", 0)  # Mark as regular parameter
 
                     token = self.get_token()
                 else:
