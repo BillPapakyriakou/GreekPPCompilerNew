@@ -68,6 +68,8 @@ class SymbolTable:
     def addEntity(self, name, type, startingQuad = None):
         currentScope = self.scopes[-1]
 
+        #print(f"Adding entity: {name}, Type: {type}, to Scope Level: {currentScope.nestingLevel}")
+
         for entity in currentScope.listEntity:
             if entity.name == name and entity.type == type:
                 print(name, type)
@@ -92,6 +94,7 @@ class SymbolTable:
         if len(self.scopes) > 0:
             self.scopes.pop()
             self.depth -= 1
+
         else:
             print("Cannot delete the global scope.")
 
@@ -110,38 +113,92 @@ class SymbolTable:
                     return entity
         raise Exception(f"Entity {name} not found.")
 
-
-
+    """
     def symbolTableGen(self):
         filename = sys.argv[1]
         out_filename = filename[:-3] + ".sym"
 
-        with open(out_filename, "w", encoding="utf-8") as f:
+        with open(out_filename, "a", encoding="utf-8") as f:
             f.write("// Symbol Table\n\n")
 
-            # Iterate over scopes and entities within each scope
-            for i, scope in enumerate(self.scopes):
+            # For every scope
+            for scope in self.scopes:
                 f.write(f"// Scope level {scope.nestingLevel}\n")
 
                 for entity in scope.listEntity:
-                    # Write basic entity information
+                    # Only print entities (variables) with their name and offset
                     line = f"{entity.name}/{entity.offset}"
 
-                    # If the entity is a function or procedure, add argument info
-                    if entity.argumentList:
-                        # Add argument types and passing modes
-                        #for arg in entity.argumentList:
-                        #    line += f"/{arg.type}"
+                    # Check if the entity has argumentList (for functions/procedures)
+                    if hasattr(entity, "argumentList") and entity.argumentList:
                         for arg in entity.argumentList:
                             line += f" ->{arg.parMode}"
 
-                    if entity.type == "temporary":
-                        line += " (temp)"
+                        # Check if the entity has a 'cv' or 'ref' attribute for parameter types
+                        if hasattr(entity, "parMode") and entity.parMode:
+                            if entity.parMode == "cv":
+                                line += "/cv"
+                            elif entity.parMode == "ref":
+                                line += "/ref"
+
+                        # Check if the entity is temporary
+                        if hasattr(entity, "entityType") and entity.entityType == "temporary":
+                            line += " (temp)"
 
                     # Write the line with entity information
                     f.write(line + "\n")
 
-                f.write("\n")  # Add space between scopes for readability
+                f.write("\n")  # Empty line between scopes for readability
+    """
+
+    def symbolTableGen(self):
+        global symbolTable
+
+        out = ""
+
+        for scope in self.scopes:
+            out += f"Nesting Level: {scope.nestingLevel}  "
+
+            for entity in scope.listEntity:
+                line = f"{entity.name}/{entity.offset}"
+
+                # Function or procedure: show ->parMode for each argument
+                if hasattr(entity, "argumentList") and entity.argumentList:
+                    for arg in entity.argumentList:
+                        line += f" ->{arg.parMode}"
+
+                # Parameters: add /cv or /ref if applicable
+                if hasattr(entity, "parMode"):
+                    if entity.parMode == "cv":
+                        line += "/cv"
+                    elif entity.parMode == "ref":
+                        line += "/ref"
+
+                # Check if the entity is temporary
+                if entity.type == "temporary":
+                    line += " (temp)"
+
+                    symbolTable += line + "\n"
+
+                out += line + " "
+
+            out += "\n"
+
+        out += "========================================\n"
+
+        # Append this full snapshot to the global symbol table
+        symbolTable += out
+
+    def writeSymTable(symbol_table, filename):
+
+        global symbolTable
+
+        out_filename = filename[:-3] + ".sym"
+
+        with open(out_filename, "w", encoding="utf-8") as f:
+            f.write(symbolTable)
+
+
 
 
 # InterCodeGen class - handles intermediate code generation using quads
@@ -172,7 +229,7 @@ class InterCodeGen:
         temp = "T_" + str(self.tempVarCounter)
         self.tempVarCounter += 1
         self.variables.append(temp)
-        self.symbolTable.addEntity(temp, "temporary", None)  # add temporary variable entity
+        self.symbolTable.addEntity(temp, "temporary")  # add temporary variable entity
         return temp
 
     # Creates an empty list for quad labels
@@ -525,7 +582,10 @@ class Parser:
         self.intermediate_gen.genQuad("halt", "_", "_", "_")  # Halt to stop execution after program statements
         self.intermediate_gen.genQuad("end_block", self.program_name, "_", "_")  # End block to mark end of program
 
+        self.symbol_table.symbolTableGen()  # Test symbol table, creates .sym file
+
         self.symbol_table.deleteScope()
+
 
     def declarations(self):
 
@@ -543,10 +603,10 @@ class Parser:
         # Normal parameter or formal parameter handling
         if token.family == "id":
             if mode == "CV":  # If mode is CV (by value), treat it as εισοδος
-                self.symbol_table.addEntity(f"είσοδος_{token.recognised_string}", "parameter")  # Add as είσοδος
+                self.symbol_table.addEntity(f"είσοδος_{token.recognised_string}", "είσοδος")  # Add as είσοδος
                 self.symbol_table.addArgument("CV", 0)  # Mark as CV (by value)
             elif mode == "REF":  # If mode is REF (by reference), treat it as εξοδος
-                self.symbol_table.addEntity(f"έξοδος_{token.recognised_string}", "parameter")  # Add as έξοδος
+                self.symbol_table.addEntity(f"έξοδος_{token.recognised_string}", "έξοδος")  # Add as έξοδος
                 self.symbol_table.addArgument("REF", 0)  # Mark as REF (by reference)
             else:  # If no mode (regular parameter)
                 self.symbol_table.addEntity(token.recognised_string, "parameter")  # Add as regular parameter
@@ -562,10 +622,10 @@ class Parser:
 
                 if token.family == "id":
                     if mode == "CV":  # If mode is CV, treat it as εισοδος
-                        self.symbol_table.addEntity(f"είσοδος_{token.recognised_string}", "parameter")  # Add as είσοδος
+                        self.symbol_table.addEntity(f"είσοδος_{token.recognised_string}", "είσοδος")  # Add as είσοδος
                         self.symbol_table.addArgument("CV")  # Mark as CV (by value)
                     elif mode == "REF":  # If mode is REF, treat it as εξοδος
-                        self.symbol_table.addEntity(f"έξοδος_{token.recognised_string}", "parameter")  # Add as έξοδος
+                        self.symbol_table.addEntity(f"έξοδος_{token.recognised_string}", "έξοδος")  # Add as έξοδος
                         self.symbol_table.addArgument("REF")  # Mark as REF (by reference)
                     else:  # If no mode (regular parameter)
                         self.symbol_table.addEntity(token.recognised_string, "parameter")  # Add as regular parameter
@@ -633,7 +693,7 @@ class Parser:
 
         self.intermediate_gen.genQuad("end_block", self.subprogram_name, "_", "_")  # End block to mark end of function
 
-        self.symbol_table.symbolTableGen()  # Test symbol table, creates .symb file
+        self.symbol_table.symbolTableGen()  # Test symbol table, creates .sym file
 
         self.symbol_table.deleteScope()
 
@@ -679,7 +739,8 @@ class Parser:
 
         self.intermediate_gen.genQuad("end_block", self.subprogram_name, "_", "_")  # End block to mark end of procedure
 
-        self.symbol_table.symbolTableGen()  # Test symbol table, creates .symb file
+        self.symbol_table.symbolTableGen()  # Test symbol table, creates .sym file
+
         self.symbol_table.deleteScope()
 
     def formalparlist(self):
@@ -1507,7 +1568,7 @@ def main():
 
     intermediateGen.interCodeGen(sys.argv[1])  # Test intermediate code, creates .int file
 
-    #symbolTable.writeSymTable(sys.argv[1])  # Test symbol table, creates .sym file
+    symbolTable.writeSymTable(sys.argv[1])  # Test symbol table, creates .sym file
     """
     while token.family != "EOF":
         print(token)
@@ -1544,6 +1605,9 @@ if (__name__ == "__main__"):
     call_name = ""  # Used in call_stat() to store function - procedure name for intermediate code generation
     function_names = []  # Store function names for intermediate code generation
     procedure_names = []  # Store procedure names for intermediate code generation
+
+
+    symbolTable = ""
 
 
 
