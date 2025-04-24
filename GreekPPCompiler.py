@@ -68,7 +68,7 @@ class SymbolTable:
     def addEntity(self, name, type, startingQuad = None):
         currentScope = self.scopes[-1]
 
-        #print(f"Adding entity: {name}, Type: {type}, to Scope Level: {currentScope.nestingLevel}")
+        print(f"Adding entity: {name}, Type: {type}, to Scope Level: {currentScope.nestingLevel}")
 
         for entity in currentScope.listEntity:
             if entity.name == name and entity.type == type:
@@ -100,6 +100,7 @@ class SymbolTable:
 
     def addArgument(self, parMode, type):
         argument = Argument(parMode, type)
+        #print(argument.parMode)
         currentScope = self.scopes[-1]
         if currentScope.listEntity:
             currentScope.listEntity[-1].argumentList.append(argument)
@@ -113,43 +114,6 @@ class SymbolTable:
                     return entity
         raise Exception(f"Entity {name} not found.")
 
-    """
-    def symbolTableGen(self):
-        filename = sys.argv[1]
-        out_filename = filename[:-3] + ".sym"
-
-        with open(out_filename, "a", encoding="utf-8") as f:
-            f.write("// Symbol Table\n\n")
-
-            # For every scope
-            for scope in self.scopes:
-                f.write(f"// Scope level {scope.nestingLevel}\n")
-
-                for entity in scope.listEntity:
-                    # Only print entities (variables) with their name and offset
-                    line = f"{entity.name}/{entity.offset}"
-
-                    # Check if the entity has argumentList (for functions/procedures)
-                    if hasattr(entity, "argumentList") and entity.argumentList:
-                        for arg in entity.argumentList:
-                            line += f" ->{arg.parMode}"
-
-                        # Check if the entity has a 'cv' or 'ref' attribute for parameter types
-                        if hasattr(entity, "parMode") and entity.parMode:
-                            if entity.parMode == "cv":
-                                line += "/cv"
-                            elif entity.parMode == "ref":
-                                line += "/ref"
-
-                        # Check if the entity is temporary
-                        if hasattr(entity, "entityType") and entity.entityType == "temporary":
-                            line += " (temp)"
-
-                    # Write the line with entity information
-                    f.write(line + "\n")
-
-                f.write("\n")  # Empty line between scopes for readability
-    """
 
     def symbolTableGen(self):
         global symbolTable
@@ -160,25 +124,24 @@ class SymbolTable:
             out += f"Nesting Level: {scope.nestingLevel}  "
 
             for entity in scope.listEntity:
-                line = f"{entity.name}/{entity.offset}"
 
-                # Function or procedure: show ->parMode for each argument
-                if hasattr(entity, "argumentList") and entity.argumentList:
+                line = ""
+
+                if entity.type == "function" or entity.type == "procedure":
+                    line += f"{entity.name}/{entity.startingQuad}/{entity.offset} "
+                    if hasattr(entity, "argumentList") and entity.argumentList:
+                        for arg in entity.argumentList:
+                            line += f"-> {arg.parMode} "
+
+                elif entity.type in ("είσοδος", "έξοδος", "parameter"):
+                    line += f"{entity.name}/{entity.offset}"
+                    #if hasattr(entity.argumentList, "parMode"):
                     for arg in entity.argumentList:
-                        line += f" ->{arg.parMode}"
+                        line += f"/{arg.parMode}"
 
-                # Parameters: add /cv or /ref if applicable
-                if hasattr(entity, "parMode"):
-                    if entity.parMode == "cv":
-                        line += "/cv"
-                    elif entity.parMode == "ref":
-                        line += "/ref"
 
-                # Check if the entity is temporary
-                if entity.type == "temporary":
-                    line += " (temp)"
-
-                    symbolTable += line + "\n"
+                else:
+                    line += f"{entity.name}/{entity.offset} "
 
                 out += line + " "
 
@@ -601,15 +564,17 @@ class Parser:
 
         # Normal parameter or formal parameter handling
         if token.family == "id":
-            if mode == "CV":  # If mode is CV (by value), treat it as εισοδος
-                self.symbol_table.addEntity(f"είσοδος_{token.recognised_string}", "είσοδος")  # Add as είσοδος
+            if mode == "CV":  # If mode is CV (by value), treat it as είσοδος
+                #self.symbol_table.addEntity(f"είσοδος_{token.recognised_string}", "είσοδος")  # Add as είσοδος
+                self.symbol_table.addEntity(f"{token.recognised_string}", "είσοδος")  # Add as είσοδος
                 self.symbol_table.addArgument("CV", 0)  # Mark as CV (by value)
-            elif mode == "REF":  # If mode is REF (by reference), treat it as εξοδος
-                self.symbol_table.addEntity(f"έξοδος_{token.recognised_string}", "έξοδος")  # Add as έξοδος
+            elif mode == "REF":  # If mode is REF (by reference), treat it as έξοδος
+                #self.symbol_table.addEntity(f"έξοδος_{token.recognised_string}", "έξοδος")  # Add as έξοδος
+                self.symbol_table.addEntity(f"{token.recognised_string}", "έξοδος")  # Add as είσοδος
                 self.symbol_table.addArgument("REF", 0)  # Mark as REF (by reference)
             else:  # If no mode (regular parameter)
                 self.symbol_table.addEntity(token.recognised_string, "parameter")  # Add as regular parameter
-                #self.symbol_table.addArgument("parameter")  # Mark as regular parameter
+                self.symbol_table.addArgument("parameter", 0)  # Mark as regular parameter
 
             token = self.get_token()
 
@@ -620,15 +585,17 @@ class Parser:
                 token = self.get_token()
 
                 if token.family == "id":
-                    if mode == "CV":  # If mode is CV, treat it as εισοδος
-                        self.symbol_table.addEntity(f"είσοδος_{token.recognised_string}", "είσοδος")  # Add as είσοδος
-                        self.symbol_table.addArgument("CV")  # Mark as CV (by value)
-                    elif mode == "REF":  # If mode is REF, treat it as εξοδος
-                        self.symbol_table.addEntity(f"έξοδος_{token.recognised_string}", "έξοδος")  # Add as έξοδος
-                        self.symbol_table.addArgument("REF")  # Mark as REF (by reference)
+                    if mode == "CV":  # If mode is CV, treat it as είσοδος
+                        #self.symbol_table.addEntity(f"είσοδος_{token.recognised_string}", "είσοδος")  # Add as είσοδος
+                        self.symbol_table.addEntity(f"{token.recognised_string}", "είσοδος")  # Add as είσοδος
+                        self.symbol_table.addArgument("CV", 0)  # Mark as CV (by value)
+                    elif mode == "REF":  # If mode is REF, treat it as έξοδος
+                        #self.symbol_table.addEntity(f"έξοδος_{token.recognised_string}", "έξοδος")  # Add as έξοδος
+                        self.symbol_table.addEntity(f"{token.recognised_string}", "έξοδος")  # Add as είσοδος
+                        self.symbol_table.addArgument("REF", 0)  # Mark as REF (by reference)
                     else:  # If no mode (regular parameter)
                         self.symbol_table.addEntity(token.recognised_string, "parameter")  # Add as regular parameter
-                        #self.symbol_table.addArgument("parameter")  # Mark as regular parameter
+                        self.symbol_table.addArgument("parameter", 0)  # Mark as regular parameter
 
                     token = self.get_token()
                 else:
