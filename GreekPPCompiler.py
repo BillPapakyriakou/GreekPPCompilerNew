@@ -127,20 +127,20 @@ class SymbolTable:
                 line = ""
 
                 if entity.type == "function" or entity.type == "procedure":
-                    line += f"{entity.name}/{entity.startingQuad}/{entity.offset} "
+                    line += f"{entity.name}/{entity.startingQuad}/{entity.offset}/{entity.type} "
                     if hasattr(entity, "argumentList") and entity.argumentList:
                         for arg in entity.argumentList:
                             line += f"-> {arg.parMode} "
 
                 elif entity.type in ("είσοδος", "έξοδος", "parameter"):
-                    line += f"{entity.name}/{entity.offset}"
+                    line += f"{entity.name}/{entity.offset}/{entity.type}"
                     #if hasattr(entity.argumentList, "parMode"):
                     for arg in entity.argumentList:
-                        line += f"/{arg.parMode}"
+                        line += f"/{arg.parMode} "
 
 
                 else:
-                    line += f"{entity.name}/{entity.offset} "
+                    line += f"{entity.name}/{entity.offset}/{entity.type} "
 
                 out += line + " "
 
