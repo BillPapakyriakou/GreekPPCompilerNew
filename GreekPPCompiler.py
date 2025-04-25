@@ -67,8 +67,8 @@ class SymbolTable:
 
     def addEntity(self, name, type, startingQuad = None):
         currentScope = self.scopes[-1]
-
-        print(f"Adding entity: {name}, Type: {type}, to Scope Level: {currentScope.nestingLevel}")
+        # debug log for symbol table entities
+        #print(f"Adding entity: {name}, Type: {type}, to Scope Level: {currentScope.nestingLevel}")
 
         for entity in currentScope.listEntity:
             if entity.name == name and entity.type == type:
@@ -124,7 +124,6 @@ class SymbolTable:
             out += f"Nesting Level: {scope.nestingLevel}  "
 
             for entity in scope.listEntity:
-
                 line = ""
 
                 if entity.type == "function" or entity.type == "procedure":
@@ -150,6 +149,9 @@ class SymbolTable:
         out += "========================================\n"
 
         symbolTable += out
+
+
+
 
     def writeSymTable(symbol_table, filename):
 
@@ -191,7 +193,7 @@ class InterCodeGen:
         temp = "T_" + str(self.tempVarCounter)
         self.tempVarCounter += 1
         self.variables.append(temp)
-        self.symbolTable.addEntity(temp, "temporary")  # add temporary variable entity
+        #self.symbolTable.addEntity(temp, "temporary")  # add temporary variable entity
         return temp
 
     # Creates an empty list for quad labels
@@ -216,6 +218,7 @@ class InterCodeGen:
                 if quad[0] == label:  # If label matches (label from listX is found in quad_list)
                     quad[4] = z       # Replace its 5th (last element) with the given label (labelZ)
                     break
+
 
     # Test - creates a .int file that contains the intermediate code
     def interCodeGen(self, file_name):
@@ -315,8 +318,9 @@ class Lex:
                 exit(1)
 
             # Check if number falls in range [-32767, 32767]
-            #if (int(num) <= - 32767 or int(num) >= 32767) :
-            if (int(num) <= - 932767 or int(num) >= 932767):
+            #if (int(num) <= - 32767 or int(num) >= 32767) :        # according to edstem answer,
+                                                                    # later changed due to .int examples including larger numbers
+            if (int(num) <= - 2147483648 or int(num) >= 2147483647):  # min and max int in C
                 print(f"Number '{num}' is out of range at line {self.current_line}")
                 exit(1)
 
@@ -865,6 +869,7 @@ class Parser:
             # Check if the expression is a function (handle case where we have z := function(x, y))
             if e_place in function_names:
                 w = self.intermediate_gen.newTemp()
+                self.symbol_table.addEntity(w, "temporary", None)
                 self.intermediate_gen.genQuad("par", w, "RET", "_")
                 self.intermediate_gen.genQuad("call", e_place, "_", "_")
                 self.intermediate_gen.genQuad(":=", w, "_", id)
@@ -1061,6 +1066,7 @@ class Parser:
         
 
         temp = self.intermediate_gen.newTemp()
+        self.symbol_table.addEntity(temp, "temporary", None)
         self.intermediate_gen.genQuad("+", loop_var, step_val, temp)
         self.intermediate_gen.genQuad(":=", temp, "_", loop_var)
 
@@ -1152,6 +1158,7 @@ class Parser:
             # Check if we re dealing with a function, or procedure
             if (call_name in function_names):  # If its a function
                 w = self.intermediate_gen.newTemp()
+                self.symbol_table.addEntity(w, "temporary", None)
                 self.intermediate_gen.genQuad("par", w, "RET", "_")
                 self.intermediate_gen.genQuad("call", call_name, "_", "_")
             elif (call_name in procedure_names):
@@ -1371,6 +1378,7 @@ class Parser:
 
         if sign == "-":
             w = self.intermediate_gen.newTemp()
+            self.symbol_table.addEntity(w, "temporary", None)
             self.intermediate_gen.genQuad("-", "0", t1_place, w)
             t1_place = w
 
@@ -1384,6 +1392,7 @@ class Parser:
             t2_place = self.term()  # Calls term and stores the second term
 
             w = self.intermediate_gen.newTemp()  # Creates new temporary variable for current result
+            self.symbol_table.addEntity(w, "temporary", None)
             self.intermediate_gen.genQuad(op, t1_place, t2_place, w)  # Creates quad that adds current result to the new t2
             t1_place = w  # Current result is stored in t1 for it to be used in case we have another t2
 
@@ -1412,6 +1421,7 @@ class Parser:
             f2_place = self.factor()  # Calls factor and stores the second term
 
             w = self.intermediate_gen.newTemp()  # Creates new temporary variable for current result
+            self.symbol_table.addEntity(w, "temporary", None)
             self.intermediate_gen.genQuad(op, f1_place, f2_place, w)  # Creates quad that adds current result to the new f2
             f1_place = w  # Current result is stored in f1 for it to be used in case we have another f2
 
