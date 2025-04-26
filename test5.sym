@@ -1,0 +1,9 @@
+Nesting Level: 0  a/12/parameter b/16/parameter c/20/parameter f/1/24/function  
+Nesting Level: 1  a/12/parameter a/16/είσοδος/CV  c/20/έξοδος/REF  g/2/24/function  
+Nesting Level: 2  x/12/parameter x/16/είσοδος/CV  y/20/έξοδος/REF  T_0/24/temporary  T_1/28/temporary  
+========================================
+Nesting Level: 0  a/12/parameter b/16/parameter c/20/parameter f/1/24/function  
+Nesting Level: 1  a/12/parameter a/16/είσοδος/CV  c/20/έξοδος/REF  g/2/24/function  T_2/28/temporary  
+========================================
+Nesting Level: 0  a/12/parameter b/16/parameter c/20/parameter f/1/24/function  T_3/28/temporary  
+========================================

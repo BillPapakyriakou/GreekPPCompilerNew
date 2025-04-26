@@ -1,12 +1,5 @@
-// Symbol Table
-
-// Scope level 0
-a/12
-b/16
-f/20
-
-// Scope level 1
-a/12
-είσοδος_a/16/0 ->CV
-έξοδος_c/20/0 ->REF
-
+Nesting Level: 0  a/12/parameter b/16/parameter f/1/20/function 
+Nesting Level: 1  a/12/parameter a/16/είσοδος/CV c/20/έξοδος/REF T_0/24/temporary 
+========================================
+Nesting Level: 0  a/12/parameter b/16/parameter f/1/20/function T_1/24/temporary 
+========================================

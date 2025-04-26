@@ -128,13 +128,11 @@ class SymbolTable:
 
                 if entity.type == "function" or entity.type == "procedure":
                     line += f"{entity.name}/{entity.startingQuad}/{entity.offset}/{entity.type} "
-                    if hasattr(entity, "argumentList") and entity.argumentList:
-                        for arg in entity.argumentList:
-                            line += f"-> {arg.parMode} "
+                    for arg in entity.argumentList:
+                        line += f"-> {arg.parMode} "
 
                 elif entity.type in ("είσοδος", "έξοδος", "parameter"):
                     line += f"{entity.name}/{entity.offset}/{entity.type}"
-                    #if hasattr(entity.argumentList, "parMode"):
                     for arg in entity.argumentList:
                         line += f"/{arg.parMode} "
 
@@ -151,8 +149,6 @@ class SymbolTable:
         symbolTable += out
 
 
-
-
     def writeSymTable(symbol_table, filename):
 
         global symbolTable
@@ -161,8 +157,6 @@ class SymbolTable:
 
         with open(out_filename, "w", encoding="utf-8") as f:
             f.write(symbolTable)
-
-
 
 
 # InterCodeGen class - handles intermediate code generation using quads
@@ -193,7 +187,7 @@ class InterCodeGen:
         temp = "T_" + str(self.tempVarCounter)
         self.tempVarCounter += 1
         self.variables.append(temp)
-        #self.symbolTable.addEntity(temp, "temporary")  # add temporary variable entity
+        #self.symbolTable.addEntity(temp, "temporary")  # add temporary variable entity, now added in newTemp() calls
         return temp
 
     # Creates an empty list for quad labels
@@ -1584,7 +1578,6 @@ if (__name__ == "__main__"):
 
 
     symbolTable = ""
-
 
 
     # Main call
