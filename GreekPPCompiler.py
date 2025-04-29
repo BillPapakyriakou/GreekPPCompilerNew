@@ -87,13 +87,10 @@ class SymbolTable:
         new_entity = Entity(name, type, startingQuad)
 
         new_entity.offset = currentScope.framelength
-        currentScope.framelength += 4  # Increment offset by 4 for every entity addition
+        currentScope.framelength += 4  # Increment by 4 for every entity addition
         currentScope.listEntity.append(new_entity)
         
         return new_entity
-
-
-
 
 
     def addScope(self):
@@ -487,7 +484,6 @@ class Parser:
 
         self.program_name = ""      # For intermediate code generation
         self.subprogram_name = ""     # For intermediate code generation
-        #self.scopes = []  # Initialize scopes as an empty list
 
 
     # Start syntax analysis by getting the first token & calling the parsing functions
@@ -581,10 +577,10 @@ class Parser:
                 self.symbol_table.addEntity(f"{token.recognised_string}", "είσοδος")  # Add as είσοδος
                 self.symbol_table.addArgument("CV", 0)  # Mark as CV (by value)
 
-                # Check if we have enough scopes (at least 2 scopes: function and its parent)
+
                 if len(self.symbol_table.scopes) > 1:
-                    parentScope = self.symbol_table.scopes[-2]  # Parent scope (function's scope)
-                    currentFunction = parentScope.listEntity[-1]  # Get the most recent function
+                    parentScope = self.symbol_table.scopes[-2]  # Function scope
+                    currentFunction = parentScope.listEntity[-1]  # Get most recent function
                     if hasattr(currentFunction, 'argumentList'):
                         currentFunction.argumentList.append(Argument("CV", token.recognised_string))
                     else:
@@ -596,10 +592,9 @@ class Parser:
                 self.symbol_table.addEntity(f"{token.recognised_string}", "έξοδος")  # Add as έξοδος
                 self.symbol_table.addArgument("REF", 0)  # Mark as REF (by reference)
 
-                # Check if we have enough scopes (at least 2 scopes: function and its parent)
                 if len(self.symbol_table.scopes) > 1:
-                    parentScope = self.symbol_table.scopes[-2]  # Parent scope (function's scope)
-                    currentFunction = parentScope.listEntity[-1]  # Get the most recent function
+                    parentScope = self.symbol_table.scopes[-2]  # Function scope
+                    currentFunction = parentScope.listEntity[-1]  # Get most recent function
                     if hasattr(currentFunction, 'argumentList'):
                         currentFunction.argumentList.append(Argument("REF", token.recognised_string))
                     else:
@@ -621,10 +616,9 @@ class Parser:
                         self.symbol_table.addEntity(f"{token.recognised_string}", "είσοδος")  # Add as είσοδος
                         self.symbol_table.addArgument("CV", 0)  # Mark as CV (by value)
 
-                        # Check if we have enough scopes (at least 2 scopes: function and its parent)
                         if len(self.symbol_table.scopes) > 1:
-                            parentScope = self.symbol_table.scopes[-2]  # Parent scope (function's scope)
-                            currentFunction = parentScope.listEntity[-1]  # Get the most recent function
+                            parentScope = self.symbol_table.scopes[-2]  # Function scope
+                            currentFunction = parentScope.listEntity[-1]  # Get most recent function
                             if hasattr(currentFunction, 'argumentList'):
                                 currentFunction.argumentList.append(Argument("CV", token.recognised_string))
                             else:
@@ -636,10 +630,9 @@ class Parser:
                         self.symbol_table.addEntity(f"{token.recognised_string}", "έξοδος")  # Add as έξοδος
                         self.symbol_table.addArgument("REF", 0)  # Mark as REF (by reference)
 
-                        # Check if we have enough scopes (at least 2 scopes: function and its parent)
                         if len(self.symbol_table.scopes) > 1:
-                            parentScope = self.symbol_table.scopes[-2]  # Parent scope (function's scope)
-                            currentFunction = parentScope.listEntity[-1]  # Get the most recent function
+                            parentScope = self.symbol_table.scopes[-2]  # Function scope
+                            currentFunction = parentScope.listEntity[-1]  # Get most recent function
                             if hasattr(currentFunction, 'argumentList'):
                                 currentFunction.argumentList.append(Argument("REF", token.recognised_string))
                             else:
