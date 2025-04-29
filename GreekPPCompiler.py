@@ -42,7 +42,7 @@ class Scope:
     def __init__(self, nestingLevel):
         self.nestingLevel = nestingLevel    # Depth level for the scope
         self.listEntity = []            # List of entities for the scope
-        self.framelength = 12
+        self.framelength = 12           # Starting framelength
 
 
 # Argument class - formal parameter representation of a function (or procedure)
@@ -51,8 +51,8 @@ class Argument:
 
     # Constructor
     def __init__(self, parMode, type):
-        self.parMode = parMode  # (integer) parameter passing mode, value or reference
-        self.type = type    # Argument type - variable, int, etc.
+        self.parMode = parMode  # parameter mode (value or reference)
+        self.type = type
 
 
 # Symbol table class - handles symbol management, keeps track of the scope and of the entity storage
@@ -65,23 +65,35 @@ class SymbolTable:
         self.depth = 1
 
 
-    def addEntity(self, name, type, startingQuad = None):
+    def addEntity(self, name, type, startingQuad=None):
         currentScope = self.scopes[-1]
+
         # debug log for symbol table entities
         #print(f"Adding entity: {name}, Type: {type}, to Scope Level: {currentScope.nestingLevel}")
 
         for entity in currentScope.listEntity:
-            if entity.name == name and entity.type == type:
-                print(name, type)
-                raise Exception(f"Entity {name} already exists in this scope")
+            if entity.name == name:
+
+                if entity.type == "parameter" and type in ("είσοδος", "έξοδος"):
+                    entity.type = type
+                    return entity
+                elif entity.type == type:
+                    print(name, type)
+                    raise Exception(f"Entity {name} already exists in this scope")
+                else:
+                    raise Exception(f"Error: Entity {name} exists as {entity.type} but tried to add as {type}")
+
 
         new_entity = Entity(name, type, startingQuad)
 
         new_entity.offset = currentScope.framelength
-        currentScope.framelength += 4
+        currentScope.framelength += 4  # Increment offset by 4 for every entity addition
         currentScope.listEntity.append(new_entity)
-
+        
         return new_entity
+
+
+
 
 
     def addScope(self):
@@ -89,6 +101,7 @@ class SymbolTable:
         self.scopes.append(newScope)
         self.depth += 1
         return newScope
+
 
     def deleteScope(self):
         if len(self.scopes) > 0:
@@ -98,14 +111,16 @@ class SymbolTable:
         else:
             print("Cannot delete the global scope.")
 
+
     def addArgument(self, parMode, type):
         argument = Argument(parMode, type)
-        #print(argument.parMode)
         currentScope = self.scopes[-1]
+
         if currentScope.listEntity:
             currentScope.listEntity[-1].argumentList.append(argument)
         else:
             print("No entity to add argument to.")
+
 
     def searchEntity(self, name):
         for scope in reversed(self.scopes):
@@ -127,7 +142,7 @@ class SymbolTable:
                 line = ""
 
                 if entity.type == "function" or entity.type == "procedure":
-                    line += f"{entity.name}/{entity.startingQuad}/{entity.offset}/{entity.type} "
+                    line += f"{entity.name}/{entity.startingQuad}/{scope.framelength}/{entity.type} "
                     for arg in entity.argumentList:
                         line += f"-> {arg.parMode} "
 
@@ -135,7 +150,6 @@ class SymbolTable:
                     line += f"{entity.name}/{entity.offset}/{entity.type}"
                     for arg in entity.argumentList:
                         line += f"/{arg.parMode} "
-
 
                 else:
                     line += f"{entity.name}/{entity.offset}/{entity.type} "
@@ -170,7 +184,7 @@ class InterCodeGen:
         self.variables = variables  # list to store all program variables
 
         self.label = 0              # label counter for quads
-        self.tempVarCounter = 0     # temporary variables counter (t_1, t_2, ..., t_n)
+        self.tempVarCounter = 0     # temporary variables counter (T_0, T_1, ..., T_n)
 
     # Returns the next quad label
     def nextQuad(self):
@@ -312,9 +326,8 @@ class Lex:
                 exit(1)
 
             # Check if number falls in range [-32767, 32767]
-            #if (int(num) <= - 32767 or int(num) >= 32767) :        # according to edstem answer,
-                                                                    # later changed due to .int examples including larger numbers
-            if (int(num) <= - 2147483648 or int(num) >= 2147483647):  # min and max int in C
+
+            if (int(num) <= - 32767 or int(num) >= 32767):
                 print(f"Number '{num}' is out of range at line {self.current_line}")
                 exit(1)
 
@@ -474,6 +487,7 @@ class Parser:
 
         self.program_name = ""      # For intermediate code generation
         self.subprogram_name = ""     # For intermediate code generation
+        #self.scopes = []  # Initialize scopes as an empty list
 
 
     # Start syntax analysis by getting the first token & calling the parsing functions
@@ -556,7 +570,7 @@ class Parser:
             token = self.get_token()
             self.varlist()  # Now, varlist() is responsible for checking IDs
 
-
+    """
     def varlist(self, mode=None):
         global token
 
@@ -601,7 +615,94 @@ class Parser:
         else:
             self.error(
                 "Expected an identifier at the beginning of variable list.")  # Handle error for missing identifier
+    """
 
+    def varlist(self, mode=None):
+        global token
+
+        # Normal parameter or formal parameter handling
+        if token.family == "id":
+            # Add the entity at depth level 1 (inside function scope)
+            if mode == "CV":  # If mode is CV (by value), treat it as είσοδος
+                self.symbol_table.addEntity(f"{token.recognised_string}", "είσοδος")  # Add as είσοδος
+                self.symbol_table.addArgument("CV", 0)  # Mark as CV (by value)
+
+                # Check if we have enough scopes (at least 2 scopes: function and its parent)
+                if len(self.symbol_table.scopes) > 1:
+                    parentScope = self.symbol_table.scopes[-2]  # Parent scope (function's scope)
+                    currentFunction = parentScope.listEntity[-1]  # Get the most recent function
+                    if hasattr(currentFunction, 'argumentList'):
+                        currentFunction.argumentList.append(Argument("CV", token.recognised_string))
+                    else:
+                        print(f"Error: {currentFunction.name} is not a valid function.")
+                else:
+                    print("Error: No function scope found.")
+
+            elif mode == "REF":  # If mode is REF (by reference), treat it as έξοδος
+                self.symbol_table.addEntity(f"{token.recognised_string}", "έξοδος")  # Add as έξοδος
+                self.symbol_table.addArgument("REF", 0)  # Mark as REF (by reference)
+
+                # Check if we have enough scopes (at least 2 scopes: function and its parent)
+                if len(self.symbol_table.scopes) > 1:
+                    parentScope = self.symbol_table.scopes[-2]  # Parent scope (function's scope)
+                    currentFunction = parentScope.listEntity[-1]  # Get the most recent function
+                    if hasattr(currentFunction, 'argumentList'):
+                        currentFunction.argumentList.append(Argument("REF", token.recognised_string))
+                    else:
+                        print(f"Error: {currentFunction.name} is not a valid function.")
+                else:
+                    print("Error: No function scope found.")
+
+            else:  # If no mode (regular parameter)
+                self.symbol_table.addEntity(token.recognised_string, "parameter")  # Add as regular parameter
+
+            token = self.get_token()
+
+            # Handle commas between parameters
+            while token.recognised_string == ",":  # Handle commas
+                token = self.get_token()
+
+                if token.family == "id":
+                    if mode == "CV":  # If mode is CV, treat it as είσοδος
+                        self.symbol_table.addEntity(f"{token.recognised_string}", "είσοδος")  # Add as είσοδος
+                        self.symbol_table.addArgument("CV", 0)  # Mark as CV (by value)
+
+                        # Check if we have enough scopes (at least 2 scopes: function and its parent)
+                        if len(self.symbol_table.scopes) > 1:
+                            parentScope = self.symbol_table.scopes[-2]  # Parent scope (function's scope)
+                            currentFunction = parentScope.listEntity[-1]  # Get the most recent function
+                            if hasattr(currentFunction, 'argumentList'):
+                                currentFunction.argumentList.append(Argument("CV", token.recognised_string))
+                            else:
+                                print(f"Error: {currentFunction.name} is not a valid function.")
+                        else:
+                            print("Error: No function scope found.")
+
+                    elif mode == "REF":  # If mode is REF, treat it as έξοδος
+                        self.symbol_table.addEntity(f"{token.recognised_string}", "έξοδος")  # Add as έξοδος
+                        self.symbol_table.addArgument("REF", 0)  # Mark as REF (by reference)
+
+                        # Check if we have enough scopes (at least 2 scopes: function and its parent)
+                        if len(self.symbol_table.scopes) > 1:
+                            parentScope = self.symbol_table.scopes[-2]  # Parent scope (function's scope)
+                            currentFunction = parentScope.listEntity[-1]  # Get the most recent function
+                            if hasattr(currentFunction, 'argumentList'):
+                                currentFunction.argumentList.append(Argument("REF", token.recognised_string))
+                            else:
+                                print(f"Error: {currentFunction.name} is not a valid function.")
+                        else:
+                            print("Error: No function scope found.")
+
+                    else:  # If no mode (regular parameter)
+                        self.symbol_table.addEntity(token.recognised_string, "parameter")  # Add as regular parameter
+                        
+
+                    token = self.get_token()
+                else:
+                    self.error("Expected an identifier after ',' in variable list.")  # Handle error
+        else:
+            self.error(
+                "Expected an identifier at the beginning of variable list.")  # Handle error for missing identifier
 
     def subprograms(self):
 
@@ -630,7 +731,7 @@ class Parser:
             function_names.append(token.recognised_string)
 
 
-            self.symbol_table.addEntity(token.recognised_string, "function", self.intermediate_gen.nextQuad())  # add function entity
+            self.symbol_table.addEntity(token.recognised_string, "function", self.intermediate_gen.nextQuad() + 1)  # add function entity
             self.symbol_table.addScope()
 
             token = self.get_token()
@@ -676,7 +777,7 @@ class Parser:
             self.subprogram_name = token.recognised_string  # Store procedure name
             procedure_names.append(token.recognised_string)
 
-            self.symbol_table.addEntity(token.recognised_string, "procedure", self.intermediate_gen.nextQuad())
+            self.symbol_table.addEntity(token.recognised_string, "procedure", self.intermediate_gen.nextQuad() + 1)
             self.symbol_table.addScope()
 
             token = self.get_token()
