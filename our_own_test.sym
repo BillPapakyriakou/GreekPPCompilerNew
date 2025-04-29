@@ -1,8 +1,8 @@
-Nesting Level: 0  α/12/parameter β/16/parameter γ/20/parameter χ/24/parameter αριθμός/28/parameter αύξηση/1/32/function  
-Nesting Level: 1  α/12/parameter β/16/parameter α/20/είσοδος/CV  β/24/έξοδος/REF  T_0/28/temporary  
+Nesting Level: 0  α/12/parameter β/16/parameter γ/20/parameter χ/24/parameter αριθμός/28/parameter αύξηση/2/36/function -> CV -> REF  
+Nesting Level: 1  α/12/είσοδος β/16/έξοδος/CV /REF  T_0/20/temporary  
 ========================================
-Nesting Level: 0  α/12/parameter β/16/parameter γ/20/parameter χ/24/parameter αριθμός/28/parameter αύξηση/1/32/function  τύπωσε_συν_1/5/36/procedure  
-Nesting Level: 1  χ/12/parameter χ/16/είσοδος/CV  T_1/20/temporary  T_2/24/temporary  
+Nesting Level: 0  α/12/parameter β/16/parameter γ/20/parameter χ/24/parameter αριθμός/28/parameter αύξηση/2/40/function -> CV -> REF  τύπωσε_συν_1/6/40/procedure -> CV  
+Nesting Level: 1  χ/12/είσοδος/CV  T_1/16/temporary  T_2/20/temporary  
 ========================================
-Nesting Level: 0  α/12/parameter β/16/parameter γ/20/parameter χ/24/parameter αριθμός/28/parameter αύξηση/1/32/function  τύπωσε_συν_1/5/36/procedure  T_3/40/temporary  T_4/44/temporary  T_5/48/temporary  T_6/52/temporary  T_7/56/temporary  T_8/60/temporary  T_9/64/temporary  T_10/68/temporary  T_11/72/temporary  
+Nesting Level: 0  α/12/parameter β/16/parameter γ/20/parameter χ/24/parameter αριθμός/28/parameter αύξηση/2/76/function -> CV -> REF  τύπωσε_συν_1/6/76/procedure -> CV  T_3/40/temporary  T_4/44/temporary  T_5/48/temporary  T_6/52/temporary  T_7/56/temporary  T_8/60/temporary  T_9/64/temporary  T_10/68/temporary  T_11/72/temporary  
 ========================================
