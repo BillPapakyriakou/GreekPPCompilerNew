@@ -570,52 +570,6 @@ class Parser:
             token = self.get_token()
             self.varlist()  # Now, varlist() is responsible for checking IDs
 
-    """
-    def varlist(self, mode=None):
-        global token
-
-        # Normal parameter or formal parameter handling
-        if token.family == "id":
-            if mode == "CV":  # If mode is CV (by value), treat it as είσοδος
-                #self.symbol_table.addEntity(f"είσοδος_{token.recognised_string}", "είσοδος")  # Add as είσοδος
-                self.symbol_table.addEntity(f"{token.recognised_string}", "είσοδος")  # Add as είσοδος
-                self.symbol_table.addArgument("CV", 0)  # Mark as CV (by value)
-            elif mode == "REF":  # If mode is REF (by reference), treat it as έξοδος
-                #self.symbol_table.addEntity(f"έξοδος_{token.recognised_string}", "έξοδος")  # Add as έξοδος
-                self.symbol_table.addEntity(f"{token.recognised_string}", "έξοδος")  # Add as είσοδος
-                self.symbol_table.addArgument("REF", 0)  # Mark as REF (by reference)
-            else:  # If no mode (regular parameter)
-                self.symbol_table.addEntity(token.recognised_string, "parameter")  # Add as regular parameter
-                #self.symbol_table.addArgument("parameter", 0)  # Mark as regular parameter
-
-            token = self.get_token()
-
-            while token.family == "id":
-                self.error("Expected ',' between variable names.")  # Check for unexpected tokens
-
-            while token.recognised_string == ",":  # Handle commas
-                token = self.get_token()
-
-                if token.family == "id":
-                    if mode == "CV":  # If mode is CV, treat it as είσοδος
-                        #self.symbol_table.addEntity(f"είσοδος_{token.recognised_string}", "είσοδος")  # Add as είσοδος
-                        self.symbol_table.addEntity(f"{token.recognised_string}", "είσοδος")  # Add as είσοδος
-                        self.symbol_table.addArgument("CV", 0)  # Mark as CV (by value)
-                    elif mode == "REF":  # If mode is REF, treat it as έξοδος
-                        #self.symbol_table.addEntity(f"έξοδος_{token.recognised_string}", "έξοδος")  # Add as έξοδος
-                        self.symbol_table.addEntity(f"{token.recognised_string}", "έξοδος")  # Add as είσοδος
-                        self.symbol_table.addArgument("REF", 0)  # Mark as REF (by reference)
-                    else:  # If no mode (regular parameter)
-                        self.symbol_table.addEntity(token.recognised_string, "parameter")  # Add as regular parameter
-                        #self.symbol_table.addArgument("parameter", 0)  # Mark as regular parameter
-
-                    token = self.get_token()
-                else:
-                    self.error("Expected an identifier after ',' in variable list.")  # Handle error
-        else:
-            self.error(
-                "Expected an identifier at the beginning of variable list.")  # Handle error for missing identifier
-    """
 
     def varlist(self, mode=None):
         global token
@@ -695,7 +649,7 @@ class Parser:
 
                     else:  # If no mode (regular parameter)
                         self.symbol_table.addEntity(token.recognised_string, "parameter")  # Add as regular parameter
-                        
+
 
                     token = self.get_token()
                 else:
