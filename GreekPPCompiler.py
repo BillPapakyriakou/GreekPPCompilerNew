@@ -55,6 +55,291 @@ class Argument:
         self.type = type
 
 
+
+
+# FinalCodeGen class - Final RISC-V code generator
+
+class FinalCodeGen:
+
+    def __init__(self, quad_list, symbol_table):
+
+        self.quad_list = quad_list
+        self.symbol_table = symbol_table
+        self.output_lines = []  # List of assembly lines (to write at the .asm file)
+
+        self.current_scope = self.symbol_table.scopes[-1]  # Current scope is the last scope from the symbol table
+
+
+    def gnlvcode(self, variable):
+        # Get the entity and its scope from the symbol table
+        tempScope, tempEntity = self.symbol_table.searchEntity(variable)
+        x = ""
+        x += "      lw t0,-4(sp) \n"
+
+        levels = len(self.symbol_table.scopes) - tempScope.nestingLevel - 1
+        for i in range(levels):
+            #x += "      lw t0,-4(sp) \n"
+            x += "      lw t0,-4(t0) \n"
+        x += f"      addi t0,t0,-{tempEntity.offset} \n"
+
+        self.output_lines.append(x)
+
+
+    def loadvr(self, value, register):
+        if str(value).isdigit():  # If the value is a digit, load directly into the register
+            self.output_lines.append(f"      li {register},{value} \n")  # "li register, integer"
+        else:
+            # Get the entity and its scope from the symbol table
+            tempScope, tempEntity = self.symbol_table.searchEntity(value)
+            level = tempScope.nestingLevel
+
+            if level == self.symbol_table.depth and (
+                    tempEntity.type == "temporary" or tempEntity.type == "είσοδος" or tempEntity.type == "parameter"):
+                self.output_lines.append(f"      lw {register},-{tempEntity.offset}(sp) \n")
+            elif level == self.symbol_table.depth and tempEntity.type == "έξοδος":
+                self.output_lines.append(f"      lw t0,-{tempEntity.offset}(sp) \n")
+                self.output_lines.append(f"      lw {register},(t0) \n")
+            elif level == 0 and tempEntity.type == "parameter":
+                self.output_lines.append(f"      lw {register},-{tempEntity.offset}(gp) \n")
+            elif level < self.symbol_table.depth and (tempEntity.type == "είσοδος" or tempEntity.type == "parameter"):
+                self.gnlvcode(value)  # Call your existing gnlvcode method
+                self.output_lines.append(f"      lw {register},(t0) \n")
+            elif level < self.symbol_table.depth and tempEntity.type == "έξοδος":
+                self.gnlvcode(value)  # Call your existing gnlvcode method
+                self.output_lines.append(f"      lw t0,(t0) \n")
+                self.output_lines.append(f"      lw {register},(t0) \n")
+
+
+    def storerv(self, register, value):
+        # Store value from register into variable location
+        tempScope, tempEntity = self.symbol_table.searchEntity(value)
+        level = tempScope.nestingLevel
+
+        if level == self.symbol_table.depth and (
+                tempEntity.type == "temporary" or tempEntity.type == "είσοδος" or tempEntity.type == "parameter"):
+            self.output_lines.append(f"      sw {register},-{tempEntity.offset}(sp) \n")
+        elif level == self.symbol_table.depth and tempEntity.type == "έξοδος":
+            self.output_lines.append(f"      lw t0,-{tempEntity.offset}(sp) \n")
+            self.output_lines.append(f"      sw {register},(t0) \n")
+        elif level == 0 and tempEntity.type == "parameter":
+            self.output_lines.append(f"      sw {register},-{tempEntity.offset}(gp) \n")
+        elif level < self.symbol_table.depth and (
+                tempEntity.type == "είσοδος" or tempEntity.type == "parameter"):
+            self.gnlvcode(value)
+            self.output_lines.append(f"      sw {register},(t0) \n")
+        elif level < self.symbol_table.depth and tempEntity.type == "έξοδος":
+            self.gnlvcode(value)
+            self.output_lines.append(f"      lw t0,(t0) \n")
+            self.output_lines.append(f"      sw {register},(t0) \n")
+
+
+    def assemblyBlock(self, block_name, start_quad):
+        for quad in self.quad_list[start_quad - 1:]:
+            self.output_lines.append(f"L{quad[0]}: \n")
+            self.generateAssembly(quad, block_name)
+
+
+    def generateAssembly(self, quad, blockName):
+
+        global program_name
+        global paramSetupDone
+        global paramList
+
+        op, x, y, z = quad[1], quad[2], quad[3], quad[4]
+
+        if op == "jump":
+            self.output_lines.append(f"      b L{z} \n")
+
+        elif op == "+":
+            self.loadvr(x, "t1")
+            self.loadvr(y, "t2")
+            self.output_lines.append(f"     add t1,t1,t2 \n")
+            self.storerv("t1", z)
+
+        elif op == "-":
+            self.loadvr(x, "t1")
+            self.loadvr(y, "t2")
+            self.output_lines.append(f"     sub t1,t1,t2 \n")
+            self.storerv("t1", z)
+
+        elif op == "*":
+            self.loadvr(x, "t1")
+            self.loadvr(y, "t2")
+            self.output_lines.append(f"     mul t1,t1,t2 \n")
+            self.storerv("t1", z)
+
+        elif op == "/":
+            self.loadvr(x, "t1")
+            self.loadvr(y, "t2")
+            self.output_lines.append(f"     div t1,t1,t2 \n")
+            self.storerv("t1", z)
+
+        elif op == "=":
+            self.loadvr(x, "t1")
+            self.loadvr(y, "t2")
+            self.output_lines.append(f"     beq t1,t2,L{z} \n")
+
+        elif op == "<>":
+            self.loadvr(x, "t1")
+            self.loadvr(y, "t2")
+            self.output_lines.append(f"     bne t1,t2,L{z} \n")
+
+        elif op == "<":
+            self.loadvr(x, "t1")
+            self.loadvr(y, "t2")
+            self.output_lines.append(f"     blt t1,t2,L{z} \n")
+
+        elif op == ">":
+            self.loadvr(x, "t1")
+            self.loadvr(y, "t2")
+            self.output_lines.append(f"     bgt t1,t2,L{z} \n")
+
+        elif op == "<=":
+            self.loadvr(x, "t1")
+            self.loadvr(y, "t2")
+            self.output_lines.append(f"     ble t1,t2,L{z} \n")
+
+        elif op == ">=":
+            self.loadvr(x, "t1")
+            self.loadvr(y, "t2")
+            self.output_lines.append(f"     bge t1,t2,L{z} \n")
+
+        elif op == ":=":
+            self.loadvr(x, "t1")
+            self.storerv("t1", z)
+
+        elif op == "in":
+            self.output_lines.append(f"     li a7,5\n")
+            self.output_lines.append(f"     ecall\n")
+            self.storerv("a0", x)  # Store result from a0 into x
+
+        elif op == "out":
+            self.loadvr(x, "a0")  # Move value to be printed into a0
+            self.output_lines.append(f"     li a7,1\n")
+            self.output_lines.append(f"     ecall\n")
+
+        elif op == "halt":
+            self.output_lines.append(f"     li a0,0\n")
+            self.output_lines.append(f"     li a7,93\n")
+            self.output_lines.append(f"     ecall\n")
+
+        elif op == "begin_block":
+            framelength = self.symbol_table.scopes[0].framelength
+            if (program_name == blockName):
+                self.output_lines.append(f"      addi sp,sp,{framelength} \n")
+                self.output_lines.append(f"      mv gp,sp \n")
+            else:
+                self.output_lines.append(f"      sw ra,-0(sp) \n")
+
+        elif op == "end_block":
+            if program_name != blockName:
+                self.output_lines.append(f"      lw ra,-0(sp) \n")
+                self.output_lines.append(f"      jr ra \n")
+
+        elif op == "par":
+            if paramSetupDone == False:
+
+                callQuadIndex = int(quad[0])
+                paramNum = 0
+
+                while callQuadIndex < len(self.quad_list) and self.quad_list[callQuadIndex - 1][1] != "call":
+                    paramNum += 1
+                    paramList.append(paramNum)
+                    callQuadIndex += 1
+
+                calleeName = self.quad_list[callQuadIndex - 1][2]
+
+                calleeScope, calleeEntity = self.symbol_table.searchEntity(calleeName)
+                #calleeframelength = calleeEntity.framelength  #TODO check if we should have offset or framelength
+                calleeOffset = calleeEntity.offset
+
+                self.output_lines.append(f"      addi fp,sp,{calleeOffset} \n")
+                paramSetupDone = True
+
+            if blockName != program_name:  # If we re not in the main program get the current blocks scope and framelength
+                callerScope, callerEntity = self.symbol_table.searchEntity(blockName)
+                callerFramelength = callerEntity.framelength
+                callerScope = callerScope.nestingLevel
+
+            else:  # If we re in the main program set scope to 0 and get the framelength from the global scope (index = 0)
+                callerScope = 0
+                callerFramelength = self.symbol_table.scopes[0].framelength
+
+            if y == "CV":  # If we re passing a parameter by value
+                self.loadvr(x, "t0")  # y is the argument value, variable or constant
+                index = paramList.pop(0)
+                offset = 12 + 4 * (index - 1)
+                self.output_lines.append(f"      sw t0,-{offset}(fp) \n")
+
+            if y == "REF":
+                entityScope, entity = self.symbol_table.searchEntity(x)
+                if entityScope.nestingLevel == callerScope:  # If we re handling a local reference
+                    if entity.type in {"parameter", "είσοδος"}:
+                        index = paramList.pop(0)
+                        offset = 12 + 4 * (index - 1)
+                        self.output_lines.append(f"      addi t0,sp,-{entity.offset} \n")
+                        self.output_lines.append(f"      sw t0,-{offset}(fp) \n")
+                    elif entity.type == "έξοδος":
+                        index = paramList.pop(0)
+                        offset = 12 + 4 * (index - 1)
+                        self.output_lines.append(f"      lw t0,-{entity.offset}(sp) \n")
+                        self.output_lines.append(f"      sw t0,-{offset}(fp) \n")
+
+                else:  # If we re handling a non-local reference
+                    if entity.type in {"parameter", "είσοδος"}:
+                        index = paramList.pop(0)
+                        offset = 12 + 4 * (index - 1)
+                        self.gnlvcode(y)
+                        self.output_lines.append(f"      sw t0,-{offset}(fp) \n")
+                    elif entity.type == "έξοδος":
+                        index = paramList.pop(0)
+                        offset = 12 + 4 * (index - 1)
+                        self.gnlvcode(y)
+                        self.output_lines.append(f"      sw t0,-{offset}(fp) \n")
+
+            elif y == "RET":
+                entityScope, entity = self.symbol_table.searchEntity(x)
+                self.output_lines.append(f"      addi t0,sp,-{entity.offset} \n")
+                self.output_lines.append(f"      sw t0,-8(fp) \n")
+
+        elif op == "call":
+            calleeName = x
+            calleeScope, calleeEntity = self.symbol_table.searchEntity(calleeName)
+            calleeLevel = calleeScope.nestingLevel + 1 # TODO figure out the levels
+
+            if blockName == program_name:
+                callerLevel = 0
+                callerFramelength = self.symbol_table.scopes[0].framelength
+
+            else:
+                #callerScope, callerEntity = self.symbol_table.searchEntity(calleeName)
+                callerScope, callerEntity = self.symbol_table.searchEntity(blockName)
+                callerLevel = callerScope.nestingLevel
+                callerFramelength = callerEntity.framelength
+
+            if paramSetupDone == False:
+                self.output_lines.append(f"      addi fp,sp,{callerFramelength} \n")
+
+            if calleeLevel == callerLevel:
+                self.output_lines.append(f"      lw t0,-4(sp) \n")
+                self.output_lines.append(f"      sw t0,-4(fp) \n")
+            else:
+                self.output_lines.append(f"      sw sp,-4(fp) \n")
+
+            self.output_lines.append(f"      addi sp,sp,{calleeEntity.offset} \n")
+            self.output_lines.append(f"      jal L{calleeEntity.startingQuad - 1} \n")
+            self.output_lines.append(f"      addi sp,sp,-{calleeEntity.offset} \n")
+
+
+
+    def writeAsmToFile(self, file):
+        asm_file = file[:-2] + "asm"
+        with open(asm_file, "w") as asm_file:
+            for line in self.output_lines:
+                asm_file.write(line)
+
+
+
 # Symbol table class - handles symbol management, keeps track of the scope and of the entity storage
 
 class SymbolTable:
@@ -62,7 +347,7 @@ class SymbolTable:
     def __init__(self):
         self.globalScope = Scope(0)   # Nesting level (depth level) starts at 0 for initialization
         self.scopes = [self.globalScope]    # List that holds all the scopes starting with the global scope
-        self.depth = 1
+        self.depth = 0
 
 
     def addEntity(self, name, type, startingQuad=None):
@@ -101,7 +386,7 @@ class SymbolTable:
 
 
     def deleteScope(self):
-        if len(self.scopes) > 0:
+        if len(self.scopes) > 1:
             self.scopes.pop()
             self.depth -= 1
 
@@ -123,7 +408,7 @@ class SymbolTable:
         for scope in reversed(self.scopes):
             for entity in scope.listEntity:
                 if entity.name == name:
-                    return entity
+                    return scope, entity
         raise Exception(f"Entity {name} not found.")
 
 
@@ -168,6 +453,7 @@ class SymbolTable:
 
         with open(out_filename, "w", encoding="utf-8") as f:
             f.write(symbolTable)
+
 
 
 # InterCodeGen class - handles intermediate code generation using quads
@@ -476,10 +762,11 @@ class Lex:
 class Parser:
 
     # Constructor
-    def __init__(self, lexical_analyzer, intermediate_gen, symbol_table):
+    def __init__(self, lexical_analyzer, intermediate_gen, symbol_table, final_code_gen):
         self.lexical_analyzer = lexical_analyzer
         self.intermediate_gen = intermediate_gen
         self.symbol_table = symbol_table
+        self.final_code_gen = final_code_gen
         self.token = None
 
         self.program_name = ""      # For intermediate code generation
@@ -507,6 +794,7 @@ class Parser:
     def program(self):
 
         global token
+        global program_name
 
         # Check if the first token is "πρόγραμμα"
         if self.token.recognised_string != "πρόγραμμα":
@@ -520,6 +808,8 @@ class Parser:
 
         self.program_name = token.recognised_string  # Store program name
 
+        program_name = self.program_name  # Used in the final code generator
+
         #self.symbol_table.addScope()
 
         token = self.get_token()  # move on to the next token
@@ -530,10 +820,16 @@ class Parser:
     def program_block(self):
 
         global token
+        global program_name
 
         # Calls declarations() & subprograms()
         self.declarations()
+
+        self.final_code_gen.output_lines.append(f"L0:   b L{program_name} \n")
+
         self.subprograms()
+
+        start_quad = self.intermediate_gen.nextQuad()  # Get starting quad for the assemblyBlock call later on
 
         self.intermediate_gen.genQuad("begin_block", self.program_name, "_", "_")  # Begin block to mark beginning of program
 
@@ -549,12 +845,16 @@ class Parser:
         if token.recognised_string != "τέλος_προγράμματος":
             self.error("Expected 'τέλος_προγράμματος' at the end of the program.")
 
+        self.final_code_gen.output_lines.append(f"L{program_name}: \n")
+
         self.intermediate_gen.genQuad("halt", "_", "_", "_")  # Halt to stop execution after program statements
         self.intermediate_gen.genQuad("end_block", self.program_name, "_", "_")  # End block to mark end of program
 
+        self.final_code_gen.assemblyBlock(self.program_name, start_quad)
+
         self.symbol_table.symbolTableGen()  # Test symbol table, creates .sym file
 
-        self.symbol_table.deleteScope()
+        #self.symbol_table.deleteScope()
 
 
     def declarations(self):
@@ -699,6 +999,7 @@ class Parser:
         else:
             self.error("Expected ')' after function parameter list.")
 
+        start_quad = self.intermediate_gen.nextQuad() # Save the starting quad for the assemblyBlock call later on
         self.intermediate_gen.genQuad("begin_block", self.subprogram_name, "_", "_")  # Begin block to mark beginning of function
 
         self.funcblock()
@@ -706,6 +1007,8 @@ class Parser:
         self.intermediate_gen.genQuad("end_block", self.subprogram_name, "_", "_")  # End block to mark end of function
 
         self.symbol_table.symbolTableGen()  # Test symbol table, creates .sym file
+
+        self.final_code_gen.assemblyBlock(self.subprogram_name, start_quad)
 
         self.symbol_table.deleteScope()
 
@@ -745,6 +1048,7 @@ class Parser:
         else:
             self.error("Expected ')' after procedure parameter list.")
 
+        start_quad = self.intermediate_gen.nextQuad()  # Save the starting quad for the assemblyBlock call later on
         self.intermediate_gen.genQuad("begin_block", self.subprogram_name, "_", "_")  # Begin block to mark beginning of procedure
 
         self.procblock()
@@ -752,6 +1056,8 @@ class Parser:
         self.intermediate_gen.genQuad("end_block", self.subprogram_name, "_", "_")  # End block to mark end of procedure
 
         self.symbol_table.symbolTableGen()  # Test symbol table, creates .sym file
+
+        self.final_code_gen.assemblyBlock(self.subprogram_name, start_quad)
 
         self.symbol_table.deleteScope()
 
@@ -1575,9 +1881,13 @@ def main():
 
     intermediateGen = InterCodeGen([], [])  # Lists will be populated during compilation
 
-    symbolTable = SymbolTable()
+    symbolTable = SymbolTable()             # Initialize the Symbol Table
+    finalCodeGen = FinalCodeGen(intermediateGen.quad_list,
+                                symbolTable)  # Give quad_list and symbolTable args to finalCodeGen
     lexer = Lex(sys.argv[1])                 # Initialize the Lexical Analyzer
-    parser = Parser(lexer, intermediateGen, symbolTable)  # Initialize the Syntax Analyzer
+    parser = Parser(lexer, intermediateGen, symbolTable, finalCodeGen)  # Initialize the Syntax Analyzer
+
+
 
     #token = lexer.next_Token()  # Get the first token
 
@@ -1587,6 +1897,13 @@ def main():
     intermediateGen.interCodeGen(sys.argv[1])  # Test intermediate code, creates .int file
 
     symbolTable.writeSymTable(sys.argv[1])  # Test symbol table, creates .sym file
+
+    finalCodeGen.writeAsmToFile(sys.argv[1]) # Test final code, creates .asm file
+
+    #finalCodeGen = FinalCodeGen(intermediateGen.quad_list, symbolTable)  # Give quad_list and symbolTable args to finalCodeGen
+
+    #finalCodeGen.riscVAssemblyGen(sys.argv[1])  # Generates the RISC-V code into .s file
+
     """
     while token.family != "EOF":
         print(token)
@@ -1623,10 +1940,13 @@ if (__name__ == "__main__"):
     call_name = ""  # Used in call_stat() to store function - procedure name for intermediate code generation
     function_names = []  # Store function names for intermediate code generation
     procedure_names = []  # Store procedure names for intermediate code generation
+    program_name = ""  # Declared as global because we cant create an instance of the parser
+                    # (that contains program_name) on the final code generator
 
 
     symbolTable = ""
-
+    paramSetupDone = False  # Flag for allocating the memory for the function parameters (initializes fp) - used in final code gen
+    paramList = []
 
     # Main call
     main()
