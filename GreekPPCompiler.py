@@ -267,6 +267,7 @@ class FinalCodeGen:
 
             if y == "CV":  # If we re passing a parameter by value
                 self.loadvr(x, "t0")  # y is the argument value, variable or constant
+                #print("paramList before pop:", paramList)
                 index = paramList.pop(0)
                 offset = 12 + 4 * (index - 1)
                 self.output_lines.append(f"      sw t0,-{offset}(fp) \n")
@@ -374,7 +375,7 @@ class SymbolTable:
         new_entity.offset = currentScope.framelength
         currentScope.framelength += 4  # Increment by 4 for every entity addition
         currentScope.listEntity.append(new_entity)
-        
+
         return new_entity
 
 
@@ -405,12 +406,33 @@ class SymbolTable:
 
 
     def searchEntity(self, name):
+
         for scope in reversed(self.scopes):
             for entity in scope.listEntity:
                 if entity.name == name:
                     return scope, entity
-        raise Exception(f"Entity {name} not found.")
+        raise Exception(f"Entity {name} not found in scope {scope.nestingLevel}.")
 
+    """
+    def searchEntity(self, name):
+        print(f"[searchEntity] Searching for {name}")
+
+        # Get the current scope (the last one in the list)
+        currentScope = self.scopes[-1]
+
+        # Now, we loop over all scopes starting from the current one and move upwards
+        for scope in reversed(self.scopes):
+            print(f"  Looking in scope {scope.nestingLevel}")
+            for entity in scope.listEntity:
+                print(f"    Found entity: {entity.name}")
+                if entity.name == name:
+                    print(f"  ✅ Found {name} in scope {scope.nestingLevel}")
+                    return scope, entity
+
+        # If the entity wasn't found, we raise an exception
+        print("  ❌ Not found.")
+        raise Exception(f"Entity {name} not found in scope {currentScope.nestingLevel}.")
+    """
 
     def symbolTableGen(self):
         global symbolTable
@@ -430,9 +452,9 @@ class SymbolTable:
 
                 elif entity.type in ("είσοδος", "έξοδος", "parameter"):
                     line += f"{entity.name}/{entity.offset}/{entity.type}"
-                    for arg in entity.argumentList:
+                    """for arg in entity.argumentList:
                         line += f"/{arg.parMode} "
-
+                    """
                 else:
                     line += f"{entity.name}/{entity.offset}/{entity.type} "
 
@@ -967,6 +989,8 @@ class Parser:
         global token
         global function_names
 
+        index = len(function_names)
+
         if (token.recognised_string == "συνάρτηση"):
             token = self.get_token()
         else:
@@ -999,16 +1023,26 @@ class Parser:
         else:
             self.error("Expected ')' after function parameter list.")
 
-        start_quad = self.intermediate_gen.nextQuad() # Save the starting quad for the assemblyBlock call later on
-        self.intermediate_gen.genQuad("begin_block", self.subprogram_name, "_", "_")  # Begin block to mark beginning of function
+        start_quad = self.intermediate_gen.nextQuad()  # Save the starting quad for the assemblyBlock call later on
+        # self.intermediate_gen.genQuad("begin_block", self.subprogram_name, "_", "_")  # Begin block to mark beginning of procedure
+        self.intermediate_gen.genQuad("begin_block", function_names[index], "_",
+                                      "_")  # Begin block to mark beginning of procedure
+
+        idx = len(self.symbol_table.scopes[self.symbol_table.depth - 1].listEntity) - 1
+        ent = self.symbol_table.scopes[self.symbol_table.depth - 1].listEntity[idx]
+        ent.startingQuad = start_quad
 
         self.funcblock()
 
-        self.intermediate_gen.genQuad("end_block", self.subprogram_name, "_", "_")  # End block to mark end of function
+        ent.offset = self.symbol_table.scopes[self.symbol_table.depth - 1].framelength
+
+        # self.intermediate_gen.genQuad("end_block", self.subprogram_name, "_", "_")  # End block to mark end of procedure
+        self.intermediate_gen.genQuad("end_block", function_names[index], "_",
+                                      "_")  # End block to mark end of procedure
 
         self.symbol_table.symbolTableGen()  # Test symbol table, creates .sym file
 
-        self.final_code_gen.assemblyBlock(self.subprogram_name, start_quad)
+        self.final_code_gen.assemblyBlock(function_names[index], ent.startingQuad)
 
         self.symbol_table.deleteScope()
 
@@ -1016,6 +1050,8 @@ class Parser:
 
         global token
         global procedure_names
+
+        index = len(procedure_names)
 
         if (token.recognised_string == "διαδικασία"):
             token = self.get_token()
@@ -1049,15 +1085,26 @@ class Parser:
             self.error("Expected ')' after procedure parameter list.")
 
         start_quad = self.intermediate_gen.nextQuad()  # Save the starting quad for the assemblyBlock call later on
-        self.intermediate_gen.genQuad("begin_block", self.subprogram_name, "_", "_")  # Begin block to mark beginning of procedure
+        #self.intermediate_gen.genQuad("begin_block", self.subprogram_name, "_", "_")  # Begin block to mark beginning of procedure
+        self.intermediate_gen.genQuad("begin_block", procedure_names[index], "_",
+                                      "_")  # Begin block to mark beginning of procedure
+
+        idx = len(self.symbol_table.scopes[self.symbol_table.depth - 1].listEntity) - 1
+        ent = self.symbol_table.scopes[self.symbol_table.depth - 1].listEntity[idx]
+        ent.startingQuad = start_quad
 
         self.procblock()
 
-        self.intermediate_gen.genQuad("end_block", self.subprogram_name, "_", "_")  # End block to mark end of procedure
+        ent.offset = self.symbol_table.scopes[self.symbol_table.depth - 1].framelength
+
+        #self.intermediate_gen.genQuad("end_block", self.subprogram_name, "_", "_")  # End block to mark end of procedure
+        self.intermediate_gen.genQuad("end_block", procedure_names[index], "_", "_")  # End block to mark end of procedure
 
         self.symbol_table.symbolTableGen()  # Test symbol table, creates .sym file
 
-        self.final_code_gen.assemblyBlock(self.subprogram_name, start_quad)
+        #self.final_code_gen.assemblyBlock(self.subprogram_name, start_quad)
+        #self.final_code_gen.assemblyBlock(ent.name, ent.startingQuad)
+        self.final_code_gen.assemblyBlock(procedure_names[index], ent.startingQuad)
 
         self.symbol_table.deleteScope()
 
