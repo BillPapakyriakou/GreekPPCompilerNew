@@ -55,8 +55,6 @@ class Argument:
         self.type = type
 
 
-
-
 # FinalCodeGen class - Final RISC-V code generator
 
 class FinalCodeGen:
@@ -66,6 +64,9 @@ class FinalCodeGen:
         self.quad_list = quad_list
         self.symbol_table = symbol_table
         self.output_lines = []  # List of assembly lines (to write at the .asm file)
+        self.output_lines.append(".data\n")
+        self.output_lines.append("str_nl: .asciz \"\\n\"\n")
+        self.output_lines.append(".text\n")
 
         self.current_scope = self.symbol_table.scopes[-1]  # Current scope is the last scope from the symbol table
 
@@ -76,9 +77,8 @@ class FinalCodeGen:
         x = ""
         x += "      lw t0,-4(sp) \n"
 
-        levels = len(self.symbol_table.scopes) - tempScope.nestingLevel - 1
+        levels = len(self.symbol_table.scopes) - tempScope.nestingLevel - 2
         for i in range(levels):
-            #x += "      lw t0,-4(sp) \n"
             x += "      lw t0,-4(t0) \n"
         x += f"      addi t0,t0,-{tempEntity.offset} \n"
 
@@ -134,7 +134,9 @@ class FinalCodeGen:
 
 
     def assemblyBlock(self, block_name, start_quad):
-        for quad in self.quad_list[start_quad - 1:]:
+        start_index = int(start_quad[0])
+
+        for quad in self.quad_list[start_index - 1:]:
             self.output_lines.append(f"L{quad[0]}: \n")
             self.generateAssembly(quad, block_name)
 
@@ -155,6 +157,7 @@ class FinalCodeGen:
             self.loadvr(y, "t2")
             self.output_lines.append(f"     add t1,t1,t2 \n")
             self.storerv("t1", z)
+
 
         elif op == "-":
             self.loadvr(x, "t1")
@@ -217,6 +220,10 @@ class FinalCodeGen:
             self.loadvr(x, "a0")  # Move value to be printed into a0
             self.output_lines.append(f"     li a7,1\n")
             self.output_lines.append(f"     ecall\n")
+            # Print newline
+            self.output_lines.append(f"     la a0,str_nl\n")
+            self.output_lines.append(f"     li a7,4\n")
+            self.output_lines.append(f"     ecall\n")
 
         elif op == "halt":
             self.output_lines.append(f"     li a0,0\n")
@@ -242,17 +249,15 @@ class FinalCodeGen:
                 callQuadIndex = int(quad[0])
                 paramNum = 0
 
-                while callQuadIndex < len(self.quad_list) and self.quad_list[callQuadIndex - 1][1] != "call":
+                while callQuadIndex < len(self.quad_list) and self.quad_list[callQuadIndex - 2][1] != "call":
                     paramNum += 1
                     paramList.append(paramNum)
                     callQuadIndex += 1
 
-                calleeName = self.quad_list[callQuadIndex - 1][2]
+                calleeName = self.quad_list[callQuadIndex - 2][2]
 
                 calleeScope, calleeEntity = self.symbol_table.searchEntity(calleeName)
-                #calleeframelength = calleeEntity.framelength  #TODO check if we should have offset or framelength
                 calleeOffset = calleeEntity.offset
-
                 self.output_lines.append(f"      addi fp,sp,{calleeOffset} \n")
                 paramSetupDone = True
 
@@ -267,7 +272,6 @@ class FinalCodeGen:
 
             if y == "CV":  # If we re passing a parameter by value
                 self.loadvr(x, "t0")  # y is the argument value, variable or constant
-                #print("paramList before pop:", paramList)
                 index = paramList.pop(0)
                 offset = 12 + 4 * (index - 1)
                 self.output_lines.append(f"      sw t0,-{offset}(fp) \n")
@@ -306,20 +310,20 @@ class FinalCodeGen:
         elif op == "call":
             calleeName = x
             calleeScope, calleeEntity = self.symbol_table.searchEntity(calleeName)
-            calleeLevel = calleeScope.nestingLevel + 1 # TODO figure out the levels
+            calleeLevel = calleeScope.nestingLevel + 1
 
             if blockName == program_name:
                 callerLevel = 0
                 callerFramelength = self.symbol_table.scopes[0].framelength
 
             else:
-                #callerScope, callerEntity = self.symbol_table.searchEntity(calleeName)
                 callerScope, callerEntity = self.symbol_table.searchEntity(blockName)
                 callerLevel = callerScope.nestingLevel
                 callerFramelength = callerEntity.framelength
+                callerOffset = callerEntity.offset
 
             if paramSetupDone == False:
-                self.output_lines.append(f"      addi fp,sp,{callerFramelength} \n")
+                self.output_lines.append(f"      addi fp,sp,{callerOffset} \n")
 
             if calleeLevel == callerLevel:
                 self.output_lines.append(f"      lw t0,-4(sp) \n")
@@ -327,10 +331,11 @@ class FinalCodeGen:
             else:
                 self.output_lines.append(f"      sw sp,-4(fp) \n")
 
-            self.output_lines.append(f"      addi sp,sp,{calleeEntity.offset} \n")
-            self.output_lines.append(f"      jal L{calleeEntity.startingQuad - 1} \n")
-            self.output_lines.append(f"      addi sp,sp,-{calleeEntity.offset} \n")
 
+            self.output_lines.append(f"      addi sp,sp,{calleeEntity.offset} \n")
+            self.output_lines.append(f"      jal L{calleeEntity.startingQuad} \n")
+            self.output_lines.append(f"      addi sp,sp,-{calleeEntity.offset} \n")
+            paramSetupDone = False
 
 
     def writeAsmToFile(self, file):
@@ -338,7 +343,6 @@ class FinalCodeGen:
         with open(asm_file, "w") as asm_file:
             for line in self.output_lines:
                 asm_file.write(line)
-
 
 
 # Symbol table class - handles symbol management, keeps track of the scope and of the entity storage
@@ -349,38 +353,45 @@ class SymbolTable:
         self.globalScope = Scope(0)   # Nesting level (depth level) starts at 0 for initialization
         self.scopes = [self.globalScope]    # List that holds all the scopes starting with the global scope
         self.depth = 0
+        self.ownerEntity = None
+
 
 
     def addEntity(self, name, type, startingQuad=None):
         currentScope = self.scopes[-1]
 
         # debug log for symbol table entities
-        #print(f"Adding entity: {name}, Type: {type}, to Scope Level: {currentScope.nestingLevel}")
+        # print(f"Adding entity: {name}, Type: {type}, to Scope Level: {currentScope.nestingLevel}")
 
         for entity in currentScope.listEntity:
             if entity.name == name:
-
                 if entity.type == "parameter" and type in ("είσοδος", "έξοδος"):
                     entity.type = type
                     return entity
                 elif entity.type == type:
-                    print(name, type)
                     raise Exception(f"Entity {name} already exists in this scope")
                 else:
                     raise Exception(f"Error: Entity {name} exists as {entity.type} but tried to add as {type}")
 
-
         new_entity = Entity(name, type, startingQuad)
 
-        new_entity.offset = currentScope.framelength
-        currentScope.framelength += 4  # Increment by 4 for every entity addition
+        # Functions and procedures do not consume stack space
+        if type not in ("function", "procedure"):
+            new_entity.offset = currentScope.framelength
+            currentScope.framelength += 4
+            #print(f"    -> Offset assigned: {new_entity.offset}, new frame length: {currentScope.framelength}")
+        else:
+            new_entity.offset = None
+            #print(f"    -> No offset assigned (function/procedure).")
+
         currentScope.listEntity.append(new_entity)
 
         return new_entity
 
 
-    def addScope(self):
+    def addScope(self, ownerEntity=None):
         newScope = Scope(len(self.scopes))
+        newScope.ownerEntity = ownerEntity  # Track which function/procedure this belongs to
         self.scopes.append(newScope)
         self.depth += 1
         return newScope
@@ -388,8 +399,13 @@ class SymbolTable:
 
     def deleteScope(self):
         if len(self.scopes) > 1:
-            self.scopes.pop()
+            scope = self.scopes.pop()
             self.depth -= 1
+            # print("Deleting scope" + str(self.depth))
+
+            # If scope belongs to function/procedure save its framelength
+            if scope.ownerEntity is not None:
+                scope.ownerEntity.framelength = scope.framelength
 
         else:
             print("Cannot delete the global scope.")
@@ -413,26 +429,6 @@ class SymbolTable:
                     return scope, entity
         raise Exception(f"Entity {name} not found in scope {scope.nestingLevel}.")
 
-    """
-    def searchEntity(self, name):
-        print(f"[searchEntity] Searching for {name}")
-
-        # Get the current scope (the last one in the list)
-        currentScope = self.scopes[-1]
-
-        # Now, we loop over all scopes starting from the current one and move upwards
-        for scope in reversed(self.scopes):
-            print(f"  Looking in scope {scope.nestingLevel}")
-            for entity in scope.listEntity:
-                print(f"    Found entity: {entity.name}")
-                if entity.name == name:
-                    print(f"  ✅ Found {name} in scope {scope.nestingLevel}")
-                    return scope, entity
-
-        # If the entity wasn't found, we raise an exception
-        print("  ❌ Not found.")
-        raise Exception(f"Entity {name} not found in scope {currentScope.nestingLevel}.")
-    """
 
     def symbolTableGen(self):
         global symbolTable
@@ -446,7 +442,7 @@ class SymbolTable:
                 line = ""
 
                 if entity.type == "function" or entity.type == "procedure":
-                    line += f"{entity.name}/{entity.startingQuad}/{scope.framelength}/{entity.type} "
+                    line += f"{entity.name}/{entity.startingQuad}/{entity.offset}/{entity.type} "
                     for arg in entity.argumentList:
                         line += f"-> {arg.parMode} "
 
@@ -491,6 +487,7 @@ class InterCodeGen:
         self.label = 0              # label counter for quads
         self.tempVarCounter = 0     # temporary variables counter (T_0, T_1, ..., T_n)
 
+
     # Returns the next quad label
     def nextQuad(self):
         return self.label + 1
@@ -500,9 +497,11 @@ class InterCodeGen:
         self.label += 1
         quad = [str(self.label), str(operator), str(operand1), str(operand2), str(operand3)]
         self.quad_list.append(quad)
+        return quad
 
     # Generates a new temporary variable
     def newTemp(self):
+
         temp = "T_" + str(self.tempVarCounter)
         self.tempVarCounter += 1
         self.variables.append(temp)
@@ -832,14 +831,12 @@ class Parser:
 
         program_name = self.program_name  # Used in the final code generator
 
-        #self.symbol_table.addScope()
-
         token = self.get_token()  # move on to the next token
 
-        self.program_block()  # Calls program_block() to continue with the analysis
+        # Calls program_block() to continue with the analysis
+        self.program_block(program_name)
 
-
-    def program_block(self):
+    def program_block(self, name):
 
         global token
         global program_name
@@ -851,9 +848,7 @@ class Parser:
 
         self.subprograms()
 
-        start_quad = self.intermediate_gen.nextQuad()  # Get starting quad for the assemblyBlock call later on
-
-        self.intermediate_gen.genQuad("begin_block", self.program_name, "_", "_")  # Begin block to mark beginning of program
+        start_quad = self.intermediate_gen.genQuad("begin_block", name, "_", "_")  # Begin block to mark beginning of program
 
         # Check for 'αρχή_προγράμματος"
         if token.recognised_string != "αρχή_προγράμματος":
@@ -870,13 +865,12 @@ class Parser:
         self.final_code_gen.output_lines.append(f"L{program_name}: \n")
 
         self.intermediate_gen.genQuad("halt", "_", "_", "_")  # Halt to stop execution after program statements
-        self.intermediate_gen.genQuad("end_block", self.program_name, "_", "_")  # End block to mark end of program
+        self.intermediate_gen.genQuad("end_block", name, "_", "_")  # End block to mark end of program
 
         self.final_code_gen.assemblyBlock(self.program_name, start_quad)
 
         self.symbol_table.symbolTableGen()  # Test symbol table, creates .sym file
 
-        #self.symbol_table.deleteScope()
 
 
     def declarations(self):
@@ -973,6 +967,7 @@ class Parser:
             self.error(
                 "Expected an identifier at the beginning of variable list.")  # Handle error for missing identifier
 
+
     def subprograms(self):
 
         global token
@@ -1001,9 +996,9 @@ class Parser:
             self.subprogram_name = token.recognised_string  # Store function name
             function_names.append(token.recognised_string)
 
-
-            self.symbol_table.addEntity(token.recognised_string, "function", self.intermediate_gen.nextQuad() + 1)  # add function entity
-            self.symbol_table.addScope()
+            func_entity = self.symbol_table.addEntity(token.recognised_string, "function",
+                                        self.intermediate_gen.nextQuad() + 1)  # add function entity
+            self.symbol_table.addScope(ownerEntity=func_entity)
 
             token = self.get_token()
         else:
@@ -1015,6 +1010,7 @@ class Parser:
         else:
             self.error("Expected '(' after function identifier.")
 
+
         self.formalparlist()
 
         # Expect ')'
@@ -1023,28 +1019,14 @@ class Parser:
         else:
             self.error("Expected ')' after function parameter list.")
 
-        start_quad = self.intermediate_gen.nextQuad()  # Save the starting quad for the assemblyBlock call later on
-        # self.intermediate_gen.genQuad("begin_block", self.subprogram_name, "_", "_")  # Begin block to mark beginning of procedure
-        self.intermediate_gen.genQuad("begin_block", function_names[index], "_",
-                                      "_")  # Begin block to mark beginning of procedure
 
-        idx = len(self.symbol_table.scopes[self.symbol_table.depth - 1].listEntity) - 1
-        ent = self.symbol_table.scopes[self.symbol_table.depth - 1].listEntity[idx]
-        ent.startingQuad = start_quad
+        self.subprograms()  # Placed here to emit nested functions first
+
+        start_quad = self.intermediate_gen.nextQuad()  # Save the starting quad for the assemblyBlock call later on
+
 
         self.funcblock()
 
-        ent.offset = self.symbol_table.scopes[self.symbol_table.depth - 1].framelength
-
-        # self.intermediate_gen.genQuad("end_block", self.subprogram_name, "_", "_")  # End block to mark end of procedure
-        self.intermediate_gen.genQuad("end_block", function_names[index], "_",
-                                      "_")  # End block to mark end of procedure
-
-        self.symbol_table.symbolTableGen()  # Test symbol table, creates .sym file
-
-        self.final_code_gen.assemblyBlock(function_names[index], ent.startingQuad)
-
-        self.symbol_table.deleteScope()
 
     def proc(self):
 
@@ -1063,8 +1045,9 @@ class Parser:
             self.subprogram_name = token.recognised_string  # Store procedure name
             procedure_names.append(token.recognised_string)
 
-            self.symbol_table.addEntity(token.recognised_string, "procedure", self.intermediate_gen.nextQuad() + 1)
-            self.symbol_table.addScope()
+            proc_entity = self.symbol_table.addEntity(token.recognised_string, "procedure",
+                                                      self.intermediate_gen.nextQuad() + 1)  # add procedure entity
+            self.symbol_table.addScope(ownerEntity=proc_entity)
 
             token = self.get_token()
         else:
@@ -1084,29 +1067,8 @@ class Parser:
         else:
             self.error("Expected ')' after procedure parameter list.")
 
-        start_quad = self.intermediate_gen.nextQuad()  # Save the starting quad for the assemblyBlock call later on
-        #self.intermediate_gen.genQuad("begin_block", self.subprogram_name, "_", "_")  # Begin block to mark beginning of procedure
-        self.intermediate_gen.genQuad("begin_block", procedure_names[index], "_",
-                                      "_")  # Begin block to mark beginning of procedure
-
-        idx = len(self.symbol_table.scopes[self.symbol_table.depth - 1].listEntity) - 1
-        ent = self.symbol_table.scopes[self.symbol_table.depth - 1].listEntity[idx]
-        ent.startingQuad = start_quad
-
         self.procblock()
 
-        ent.offset = self.symbol_table.scopes[self.symbol_table.depth - 1].framelength
-
-        #self.intermediate_gen.genQuad("end_block", self.subprogram_name, "_", "_")  # End block to mark end of procedure
-        self.intermediate_gen.genQuad("end_block", procedure_names[index], "_", "_")  # End block to mark end of procedure
-
-        self.symbol_table.symbolTableGen()  # Test symbol table, creates .sym file
-
-        #self.final_code_gen.assemblyBlock(self.subprogram_name, start_quad)
-        #self.final_code_gen.assemblyBlock(ent.name, ent.startingQuad)
-        self.final_code_gen.assemblyBlock(procedure_names[index], ent.startingQuad)
-
-        self.symbol_table.deleteScope()
 
     def formalparlist(self):
 
@@ -1122,9 +1084,10 @@ class Parser:
             self.error("Expected ')' after formal parameter list.")
 
 
-    def funcblock(self):
-
+    def funcblock(self, skip_subprograms=False):
         global token
+        global function_names
+        index = len(function_names) - 1
 
         if (token.recognised_string == "διαπροσωπεία"):
             token = self.get_token()
@@ -1134,11 +1097,18 @@ class Parser:
         self.funcinput()
         self.funcoutput()
 
-        self.declarations()
-
-        self.subprograms()
+        if not skip_subprograms:
+            self.declarations()
+            self.subprograms()
+        else:
+            self.declarations()
 
         if (token.recognised_string == "αρχή_συνάρτησης"):
+            current_scope = self.symbol_table.scopes[-1]
+            entity_name = current_scope.ownerEntity.name
+            start_quad = self.intermediate_gen.genQuad("begin_block", entity_name, "_",
+                                                       "_")  # Begin block to mark beginning of procedure
+            #start_quad = self.intermediate_gen.genQuad("begin_block", function_names[index], "_", "_")  # Begin block to mark beginning of procedure
             token = self.get_token()
         else:
             self.error("Expected 'αρχή_συνάρτησης' after function body")
@@ -1150,10 +1120,30 @@ class Parser:
         else:
             self.error("Expected 'τέλος_συνάρτησης' at the end of the function block")
 
+        index = len(function_names) - 1
+
+        #  Get current scope and scope owner (function)
+        current_scope = self.symbol_table.scopes[-1]
+        func_entity = current_scope.ownerEntity
+        func_entity.startingQuad = int(start_quad[0])
+
+        # Assign framelength of the function before we delete the scope
+        func_entity.offset = current_scope.framelength
+
+        #self.intermediate_gen.genQuad("end_block", function_names[index], "_", "_")
+        self.intermediate_gen.genQuad("end_block", entity_name, "_", "_")
+        self.symbol_table.symbolTableGen()
+
+        self.final_code_gen.assemblyBlock(function_names[index], start_quad)
+        # self.final_code_gen.assemblyBlock(entity_name, start_quad)
+        self.symbol_table.deleteScope()
+
 
     def procblock(self):
 
         global token
+        global procedure_names
+        index = len(procedure_names) - 1
 
         if (token.recognised_string == "διαπροσωπεία"):
             token = self.get_token()
@@ -1168,6 +1158,11 @@ class Parser:
         self.subprograms()
 
         if (token.recognised_string == "αρχή_διαδικασίας"):
+            current_scope = self.symbol_table.scopes[-1]
+            entity_name = current_scope.ownerEntity.name
+            start_quad = self.intermediate_gen.genQuad("begin_block", entity_name, "_",
+                                                       "_")  # Begin block to mark beginning of procedure
+            #start_quad = self.intermediate_gen.genQuad("begin_block", procedure_names[index], "_", "_")  # Begin block to mark beginning of procedure
             token = self.get_token()
         else:
             self.error("Expected 'αρχή_διαδικασίας' after function body")
@@ -1179,6 +1174,26 @@ class Parser:
         else:
             self.error("Expected 'τέλος_διαδικασίας' at the end of the function block")
 
+        index = len(procedure_names) - 1
+
+        # Get current scope and scope owner (procedure)
+        current_scope = self.symbol_table.scopes[-1]
+        proc_entity = current_scope.ownerEntity
+        proc_entity.startingQuad = int(start_quad[0])
+
+        # Assign framelength of the procedure before we delete the scope
+        proc_entity.offset = current_scope.framelength
+
+
+        #self.intermediate_gen.genQuad("end_block", procedure_names[index], "_", "_")
+        self.intermediate_gen.genQuad("end_block", entity_name, "_", "_")
+
+        self.symbol_table.symbolTableGen()
+
+        self.final_code_gen.assemblyBlock(procedure_names[index], start_quad)
+        #self.final_code_gen.assemblyBlock(entity_name, start_quad)
+        self.symbol_table.deleteScope()
+
 
     def funcinput(self):
 
@@ -1188,7 +1203,6 @@ class Parser:
         if (token.recognised_string == "είσοδος"):
             token = self.get_token()
             self.varlist(mode = "CV")
-
 
 
     def funcoutput(self):
@@ -1324,6 +1338,7 @@ class Parser:
             else:
                 self.error("Expected 'εάν_τέλος' at the end of the if statement")
 
+
     def elsepart(self):
 
         global token
@@ -1373,7 +1388,6 @@ class Parser:
                 token = self.get_token()
             else:
                 self.error("Expected 'όσο_τέλος' to close the loop.")
-
 
 
     def do_stat(self):
@@ -1552,6 +1566,7 @@ class Parser:
 
             # Check if we re dealing with a function, or procedure
             if (call_name in function_names):  # If its a function
+
                 w = self.intermediate_gen.newTemp()
                 self.symbol_table.addEntity(w, "temporary", None)
                 self.intermediate_gen.genQuad("par", w, "RET", "_")
@@ -1935,9 +1950,6 @@ def main():
     parser = Parser(lexer, intermediateGen, symbolTable, finalCodeGen)  # Initialize the Syntax Analyzer
 
 
-
-    #token = lexer.next_Token()  # Get the first token
-
     # Start the syntax analysis
     parser.syntax_analyzer()
 
@@ -1946,10 +1958,6 @@ def main():
     symbolTable.writeSymTable(sys.argv[1])  # Test symbol table, creates .sym file
 
     finalCodeGen.writeAsmToFile(sys.argv[1]) # Test final code, creates .asm file
-
-    #finalCodeGen = FinalCodeGen(intermediateGen.quad_list, symbolTable)  # Give quad_list and symbolTable args to finalCodeGen
-
-    #finalCodeGen.riscVAssemblyGen(sys.argv[1])  # Generates the RISC-V code into .s file
 
     """
     while token.family != "EOF":
