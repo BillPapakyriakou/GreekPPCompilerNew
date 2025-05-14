@@ -225,6 +225,11 @@ class FinalCodeGen:
             self.output_lines.append(f"     li a7,4\n")
             self.output_lines.append(f"     ecall\n")
 
+        elif op == "retv":
+            self.loadvr(x, "t1")
+            self.output_lines.append(f"     lw t0,-8(sp)\n")
+            self.output_lines.append(f"     sw t1,(t0)\n")
+
         elif op == "halt":
             self.output_lines.append(f"     li a0,0\n")
             self.output_lines.append(f"     li a7,93\n")
@@ -789,6 +794,8 @@ class Parser:
         self.symbol_table = symbol_table
         self.final_code_gen = final_code_gen
         self.token = None
+        self.inFunction = False  # Track if we re inside a function for the return statement
+                                 # (if inside f : treat f := {something} as return {something})
 
         self.program_name = ""      # For intermediate code generation
         self.subprogram_name = ""     # For intermediate code generation
@@ -1108,6 +1115,7 @@ class Parser:
             entity_name = current_scope.ownerEntity.name
             start_quad = self.intermediate_gen.genQuad("begin_block", entity_name, "_",
                                                        "_")  # Begin block to mark beginning of procedure
+            self.inFunction = True
             #start_quad = self.intermediate_gen.genQuad("begin_block", function_names[index], "_", "_")  # Begin block to mark beginning of procedure
             token = self.get_token()
         else:
@@ -1116,6 +1124,7 @@ class Parser:
         self.sequence()
 
         if (token.recognised_string == "τέλος_συνάρτησης"):
+            self.inFunction = False
             token = self.get_token()
         else:
             self.error("Expected 'τέλος_συνάρτησης' at the end of the function block")
@@ -1275,8 +1284,12 @@ class Parser:
             token = self.get_token()    # Move to the next token
             e_place = self.expression()    # Handle the expression and store the expression
 
+            if id == self.subprogram_name and self.inFunction:
+                # We re in a function and assigning to its name :: treat as return statement
+                self.intermediate_gen.genQuad("retv", e_place, "_", "_")
+
             # Check if the expression is a function (handle case where we have z := function(x, y))
-            if e_place in function_names:
+            elif e_place in function_names:
                 w = self.intermediate_gen.newTemp()
                 self.symbol_table.addEntity(w, "temporary", None)
                 self.intermediate_gen.genQuad("par", w, "RET", "_")
