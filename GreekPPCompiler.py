@@ -554,6 +554,25 @@ class InterCodeGen:
         output_file.write(quads)  # Add quad to output file
         output_file.close()
 
+    """
+    # Test - creates a .int file that contains the intermediate code - Note - comment the method before and uncomment this one for 
+    #                                                                       write_to_c,py to work, if not it wont recognise the .int file
+    def interCodeGen(self, file_name):
+
+        quads = ""  # Empty string to store quads
+
+        interCodeGen_file = file_name[:-2] + "int"  # Change file extension
+        output_file = open(interCodeGen_file, "w", encoding="utf-8", errors="replace")
+
+        for quad in self.quad_list:
+            quads += quad[0] + ""          # Add the label
+            for j in range(1, 5):
+                quads += " : " + str(quad[j])  # Add operator, operand1, operand2, operand3
+            quads += "\n"                    # Add new line between quads
+
+        output_file.write(quads)  # Add quad to output file
+        output_file.close()
+    """
 
 # Lexical Analyzer class - reads source code file, breaks it down in tokens
 
