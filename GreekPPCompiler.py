@@ -1564,10 +1564,10 @@ class Parser:
         else:
             self.error("Expected an identifier after 'εκτέλεσε'.")
 
-        self.idtail()
+        self.idtail(call_name)
 
 
-    def idtail(self):
+    def idtail(self, id_name):
 
         global token
         global call_name
@@ -1578,17 +1578,18 @@ class Parser:
             self.actualpars()   # Handle actual parameters
 
             # Check if we re dealing with a function, or procedure
-            if (call_name in function_names):  # If its a function
-
+            if (id_name in function_names):  # If its a function
                 w = self.intermediate_gen.newTemp()
                 self.symbol_table.addEntity(w, "temporary", None)
                 self.intermediate_gen.genQuad("par", w, "RET", "_")
-                self.intermediate_gen.genQuad("call", call_name, "_", "_")
-            elif (call_name in procedure_names):
-                self.intermediate_gen.genQuad("call", call_name, "_", "_")
-
+                self.intermediate_gen.genQuad("call", id_name, "_", "_")
+                return w
+            elif (id_name in procedure_names):
+                self.intermediate_gen.genQuad("call", id_name, "_", "_")
+                return None
 
         # Otherwise, do nothing (handles empty case)
+        return None
 
 
     def actualpars(self):
@@ -1856,8 +1857,8 @@ class Parser:
 
         global token
 
-        e_place = ""   # To store expression
-        f_place = ""   # To store factor value
+        e_place = ""  # To store expression
+        f_place = ""  # To store factor value
         id_place = ""  # To store id value
 
         if (token.family == "number"):
@@ -1880,9 +1881,14 @@ class Parser:
             id_place = token.recognised_string  # Store id
             token = self.get_token()
 
-            self.idtail()
+            result = self.idtail(id_place)
 
-            f_place = id_place  # Transfer id_place to f_place
+            if result is not None:
+                f_place = result  # function call returning temporary variable
+            else:
+                f_place = id_place
+
+            #f_place = id_place  # Transfer id_place to f_place
 
         else:
             self.error("Expected factor: INTEGER, '(' expression ')', or ID.")
