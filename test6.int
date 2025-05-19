@@ -1,0 +1,17 @@
+1 : begin_block f _ _
+2 : + α 1 T_0
+3 : := T_0 _ β
+4 : := 4 _ γ
+5 : retv β _ _
+6 : end_block f _ _
+7 : begin_block κυρίως _ _
+8 : := 1 _ α
+9 : par α CV _
+10 : par β REF _
+11 : par T_1 RET _
+12 : call f _ _
+13 : := T_1 _ γ
+14 : out γ _ _
+15 : out β _ _
+16 : halt _ _ _
+17 : end_block κυρίως _ _

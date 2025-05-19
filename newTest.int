@@ -1,0 +1,16 @@
+1 : begin_block αύξηση _ _
+2 : + α 1 T_0
+3 : := T_0 _ β
+4 : + α 1 T_1
+5 : retv T_1 _ _
+6 : end_block αύξηση _ _
+7 : begin_block τεστ _ _
+8 : := 1 _ α
+9 : := 3 _ π
+10 : par π CV _
+11 : par β REF _
+12 : par T_2 RET _
+13 : call αύξηση _ _
+14 : := T_2 _ γ
+15 : halt _ _ _
+16 : end_block τεστ _ _
