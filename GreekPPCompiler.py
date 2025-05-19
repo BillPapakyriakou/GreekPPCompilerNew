@@ -2017,7 +2017,6 @@ if (__name__ == "__main__"):
     program_name = ""  # Declared as global because we cant create an instance of the parser
                     # (that contains program_name) on the final code generator
 
-
     symbolTable = ""
     paramSetupDone = False  # Flag for allocating the memory for the function parameters (initializes fp) - used in final code gen
     paramList = []
