@@ -102,10 +102,10 @@ class FinalCodeGen:
             elif level == 0 and tempEntity.type == "parameter":
                 self.output_lines.append(f"      lw {register},-{tempEntity.offset}(gp) \n")
             elif level < self.symbol_table.depth and (tempEntity.type == "είσοδος" or tempEntity.type == "parameter"):
-                self.gnlvcode(value)  # Call your existing gnlvcode method
+                self.gnlvcode(value)  # Call gnlvcode 
                 self.output_lines.append(f"      lw {register},(t0) \n")
             elif level < self.symbol_table.depth and tempEntity.type == "έξοδος":
-                self.gnlvcode(value)  # Call your existing gnlvcode method
+                self.gnlvcode(value)  # Call gnlvcode
                 self.output_lines.append(f"      lw t0,(t0) \n")
                 self.output_lines.append(f"      lw {register},(t0) \n")
 
